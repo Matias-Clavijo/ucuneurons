@@ -2,6 +2,8 @@ import gradio as gr
 import requests
 import json
 from typing import Dict, Any
+import base64
+from io import BytesIO
 
 class GradioInterface:
     """Vista de Gradio que se comunica con la API Flask"""
@@ -32,7 +34,7 @@ class GradioInterface:
         except Exception as e:
             return {"status": "error", "message": str(e)}
     
-    def process_text_interface(self, chemicals, place, materials, frequency, environment, additional_info, process, image_path) -> str:
+    def process_text_interface(self, chemicals, place, materials, frequency, environment, additional_info, process, image_pil) -> str:
         
         required_fields = {
             "Chemicals": chemicals,
@@ -47,7 +49,7 @@ class GradioInterface:
         if empty_fields:
             missing_fields_str = ", ".join(empty_fields)
             return f"❌ Please fill in all required fields. Missing: {missing_fields_str}."
-        
+
         payload = {
             "chemicals": chemicals,
             "place": place,
@@ -57,10 +59,15 @@ class GradioInterface:
             "additional_info": additional_info,
             "process": process,
         }
+ 
+        if image_pil:
+            buffered = BytesIO()
+            image_pil.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            payload['image_base64'] = img_str
 
-        if image_path:
-            payload['image_path'] = image_path
-
+        print(payload)
+  
         result = self._call_api("/api/process", "POST", payload)
         
         if result.get("status") == "error":
@@ -74,7 +81,7 @@ class GradioInterface:
 📏 **Longitud:** {data.get('length', 0)} caracteres
 📊 **Palabras:** {data.get('word_count', 0)}
 ⏰ **Procesado en:** {data.get('timestamp', '')}"""
-        
+          
     def create_interface(self) -> gr.Blocks:
         """Crear la interfaz de Gradio"""
         
@@ -129,7 +136,7 @@ class GradioInterface:
                         process_btn = gr.Button("🔄 Process", variant="primary")
                     
                     with gr.Column():
-                        image_input = gr.Image(label="Image", type="filepath")
+                        image_input = gr.Image(label="Image", type="pil")
                         process_output = gr.Markdown(
                             label="Result",
                             value="Ingresa texto y presiona 'Procesar Texto'"
@@ -149,23 +156,6 @@ class GradioInterface:
                     ],
                     outputs=process_output
                 )
-            
-            # Tab 2: Contador
-            with gr.Tab("🔢 Contador"):
-                gr.Markdown("### Gestión del contador")
-                
-                with gr.Row():
-                    status_btn = gr.Button("📊 Ver Estado", variant="secondary")
-                    increment_btn = gr.Button("➕ Incrementar", variant="primary")
-                    reset_btn = gr.Button("🔄 Reiniciar", variant="stop")
-                
-                counter_output = gr.Markdown(
-                    value="Presiona 'Ver Estado' para ver el contador actual"
-                )
-                
-                status_btn.click(fn=self.get_counter_status, outputs=counter_output)
-                increment_btn.click(fn=self.increment_counter, outputs=counter_output)
-                reset_btn.click(fn=self.reset_counter, outputs=counter_output)
         
         self.interface = interface
         return interface
