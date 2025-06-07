@@ -1,7 +1,6 @@
 from flask import Blueprint, jsonify, request
 from app.models.data_model import data_model
 
-# Crear Blueprint para API endpoints
 api_bp = Blueprint('api', __name__)
 
 @api_bp.route('/')
@@ -96,7 +95,8 @@ def process_text():
                 "message": "All fields are empty"
             }), 400
 
-        result = data_model.process_text(text)
+        image_base64 = request_data.get('image_base64')
+        result = data_model.process_text(text, image_base64)
         
         if "error" in result:
             return jsonify({

@@ -66,10 +66,9 @@ class GradioInterface:
             img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
             payload['image_base64'] = img_str
 
-        print(payload)
-  
-        result = self._call_api("/api/process", "POST", payload)
-        
+        print("Sending payload to API:", payload)
+        #result = self._call_api("/api/process", "POST", payload)
+        result = {"status": "success", "result": {"original": "Hello", "processed": "Hello", "length": 5, "word_count": 1, "timestamp": "2025-06-07T12:00:00Z"}}
         if result.get("status") == "error":
             return f"❌ Error: {result.get('message', 'Error desconocido')}"
         
@@ -87,12 +86,7 @@ class GradioInterface:
         
         with gr.Blocks(
             title="Ucuneurons",
-            theme=gr.themes.Base(),
-            css="""
-            .gradio-container {
-                max-width: 1200px !important;
-            }
-            """
+            theme=gr.themes.Base()
         ) as interface:
             
             gr.Markdown("# 🚀 Ucuneurons")
@@ -123,14 +117,14 @@ class GradioInterface:
                             label="Environment",
                             placeholder="Is indoor or outdoor (you can specified wheather)"
                         )
-                        additional_info_input = gr.Textbox(
-                            label="Additional information",
-                            placeholder="You can specify additional information that you think is important",
-                            lines=4
-                        )
                         process_input = gr.Textbox(
                             label="Process",
                             placeholder="Write the process to do (Ej: Move 3 feets)",
+                            lines=4
+                        )
+                        additional_info_input = gr.Textbox(
+                            label="Additional information",
+                            placeholder="You can specify additional information that you think is important",
                             lines=4
                         )
                         process_btn = gr.Button("🔄 Process", variant="primary")
