@@ -19,8 +19,6 @@ class GradioInterface:
                 response = requests.get(url)
             elif method == "POST":
                 response = requests.post(url, json=data)
-            elif method == "DELETE":
-                response = requests.delete(url)
             else:
                 return {"status": "error", "message": f"Método {method} no soportado"}
             
@@ -34,12 +32,23 @@ class GradioInterface:
         except Exception as e:
             return {"status": "error", "message": str(e)}
     
-    def process_text_interface(self, text: str) -> str:
-        """Procesar texto usando la API"""
-        if not text.strip():
-            return "❌ Por favor, ingresa algún texto"
+    def process_text_interface(self, chemicals, place, materials, frequency, environment, additional_info, process, image_path) -> str:
+        """Procesar texto y datos de imagen usando la API"""
         
-        result = self._call_api("/api/process", "POST", {"text": text})
+        payload = {
+            "chemicals": chemicals,
+            "place": place,
+            "materials": materials,
+            "frequency": frequency,
+            "environment": environment,
+            "additional_info": additional_info,
+            "process": process,
+        }
+        
+        if image_path:
+            payload['image_path'] = image_path
+
+        result = self._call_api("/api/process", "POST", payload)
         
         if result.get("status") == "error":
             return f"❌ Error: {result.get('message', 'Error desconocido')}"
@@ -145,7 +154,7 @@ class GradioInterface:
         
         with gr.Blocks(
             title="Web App MVC - Gradio Interface",
-            theme=gr.themes.Soft(),
+            theme=gr.themes.Base(),
             css="""
             .gradio-container {
                 max-width: 1200px !important;
@@ -153,31 +162,65 @@ class GradioInterface:
             """
         ) as interface:
             
-            gr.Markdown("# 🚀 Web App MVC - Interfaz Gradio")
-            gr.Markdown("Interfaz de usuario que se comunica con la API Flask usando arquitectura MVC")
+            gr.Markdown("# 🚀 Ucuneurons")
             
             # Tab 1: Procesador de Texto
-            with gr.Tab("📝 Procesador de Texto"):
-                gr.Markdown("### Procesar texto usando la API Flask")
+            with gr.Tab("📝 Environmental Health and Safety Professionals Optimizer"):
+                gr.Markdown("### Complete the form")
                 
                 with gr.Row():
                     with gr.Column():
-                        text_input = gr.Textbox(
-                            label="Texto a procesar",
-                            placeholder="Escribe aquí tu texto...",
+                        chemicals_input = gr.Textbox(
+                            label="Chemicals",
+                            placeholder="Write the chemicals that are involved (Ej: Pentanol)"
+                        )
+                        place_input = gr.Textbox(
+                            label="Place",
+                            placeholder="Write the place of the factory (Ej: Planta 1 Rosario, Argentina)"
+                        )
+                        materials_input = gr.Textbox(
+                            label="Materials",
+                            placeholder="Write the materials that are involved (Ej: Bomb)"
+                        )
+                        frequency_of_use_input = gr.Textbox(
+                            label="Frequency of use",
+                            placeholder="Specify the frequency in which the operator repeats the process (Ej: 10 times a day)"
+                        )
+                        environment_input = gr.Textbox(
+                            label="Environment",
+                            placeholder="Is indoor or outdoor (you can specified wheather)"
+                        )
+                        additional_info_input = gr.Textbox(
+                            label="Additional information",
+                            placeholder="You can specify additional information that you think is important",
                             lines=4
                         )
-                        process_btn = gr.Button("🔄 Procesar Texto", variant="primary")
+                        process_input = gr.Textbox(
+                            label="Process",
+                            placeholder="Write the process to do (Ej: Move 3 feets)",
+                            lines=4
+                        )
+                        process_btn = gr.Button("🔄 Process", variant="primary")
                     
                     with gr.Column():
+                        image_input = gr.Image(label="Image", type="filepath")
                         process_output = gr.Markdown(
-                            label="Resultado",
+                            label="Result",
                             value="Ingresa texto y presiona 'Procesar Texto'"
                         )
                 
                 process_btn.click(
                     fn=self.process_text_interface,
-                    inputs=text_input,
+                    inputs=[
+                        chemicals_input,
+                        place_input,
+                        materials_input,
+                        frequency_of_use_input,
+                        environment_input,
+                        additional_info_input,
+                        process_input,
+                        image_input
+                    ],
                     outputs=process_output
                 )
             
@@ -197,65 +240,6 @@ class GradioInterface:
                 status_btn.click(fn=self.get_counter_status, outputs=counter_output)
                 increment_btn.click(fn=self.increment_counter, outputs=counter_output)
                 reset_btn.click(fn=self.reset_counter, outputs=counter_output)
-            
-            # Tab 3: Datos y Mensajes
-            with gr.Tab("💾 Datos"):
-                gr.Markdown("### Gestión de mensajes")
-                
-                with gr.Row():
-                    with gr.Column():
-                        message_input = gr.Textbox(
-                            label="Nuevo mensaje",
-                            placeholder="Escribe un mensaje...",
-                            lines=2
-                        )
-                        add_message_btn = gr.Button("➕ Agregar Mensaje", variant="primary")
-                    
-                    with gr.Column():
-                        message_output = gr.Markdown(
-                            value="Agrega un mensaje para comenzar"
-                        )
-                
-                add_message_btn.click(
-                    fn=self.add_message,
-                    inputs=message_input,
-                    outputs=message_output
-                )
-            
-            # Tab 4: Estadísticas
-            with gr.Tab("📊 Estadísticas"):
-                gr.Markdown("### Estadísticas de la aplicación")
-                
-                stats_btn = gr.Button("📈 Obtener Estadísticas", variant="secondary")
-                stats_output = gr.Markdown(
-                    value="Presiona 'Obtener Estadísticas' para ver los datos"
-                )
-                
-                stats_btn.click(fn=self.get_stats, outputs=stats_output)
-            
-            # Tab 5: Historial
-            with gr.Tab("📋 Historial"):
-                gr.Markdown("### Historial de operaciones")
-                
-                with gr.Row():
-                    history_btn = gr.Button("📜 Ver Historial", variant="secondary")
-                    clear_btn = gr.Button("🗑️ Limpiar Historial", variant="stop")
-                
-                history_output = gr.Markdown(
-                    value="Presiona 'Ver Historial' para mostrar las operaciones"
-                )
-                
-                history_btn.click(fn=self.get_history, outputs=history_output)
-                clear_btn.click(fn=self.clear_history, outputs=history_output)
-            
-            # Footer
-            gr.Markdown("---")
-            gr.Markdown("""
-            💡 **Información:**
-            - 🌐 API Flask: http://localhost:5000
-            - 🎨 Interfaz Gradio: http://localhost:7860
-            - 🏗️ Arquitectura: Model-View-Controller (MVC)
-            """)
         
         self.interface = interface
         return interface
