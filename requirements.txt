@@ -1,4 +1,24 @@
+google-genai
+pillow
+python-dotenv
 flask
 flask-cors
 gradio
 requests
+# RAG Dependencies
+chromadb==0.4.22
+langchain==0.1.0
+langchain-community==0.0.13
+sentence-transformers>=2.2.0,<3.0
+huggingface_hub<0.20
+# Document Processing
+PyPDF2==3.0.1
+pdfplumber==0.10.0
+python-docx==1.1.0
+# Image Processing
+Pillow==10.1.0
+pytesseract==0.3.10
+opencv-python==4.8.1.78
+# Additional utilities
+tiktoken==0.5.2
+python-magic
