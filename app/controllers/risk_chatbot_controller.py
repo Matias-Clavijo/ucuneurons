@@ -3,6 +3,7 @@ import uuid
 import base64
 import json
 from app.models.gemini_model import gemini_model
+from datetime import datetime
 
 # Blueprint para el chatbot de evaluación de riesgos
 risk_chatbot_bp = Blueprint('risk_chatbot', __name__)
@@ -93,6 +94,7 @@ def risk_chatbot_home():
             "POST /risk-chat/start - Iniciar nueva evaluación",
             "POST /risk-chat/<session_id>/message - Enviar mensaje",
             "POST /risk-chat/<session_id>/analyze-image - Analizar imagen del lugar de trabajo",
+            "POST /risk-chat/<session_id>/submit-form - 🆕 ENVIAR CAMPOS + IMAGEN JUNTOS",
             "GET  /risk-chat/<session_id>/status - Ver estado de la recopilación",
             "GET  /risk-chat/<session_id>/history - Ver historial",
             "DELETE /risk-chat/<session_id> - Terminar evaluación"
@@ -332,6 +334,242 @@ Esta información visual será incluida en el reporte final de evaluación de ri
             "chat_response": chat_result["response"],
             "session_id": session_id,
             "timestamp": analysis_result["timestamp"]
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@risk_chatbot_bp.route('/<session_id>/submit-form', methods=['POST'])
+def submit_form_with_image(session_id):
+    """
+    ENDPOINT UNIFICADO: Enviar campos del formulario + imagen al mismo tiempo
+    
+    Ideal para frontends que quieren enviar todo junto de una vez.
+    Acepta:
+    - message: Texto del usuario (campos del formulario)
+    - image: Imagen en base64 (opcional)
+    - context: Contexto adicional para la imagen (opcional)
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "No data provided"
+            }), 400
+        
+        message = data.get("message", "")
+        image_base64 = data.get("image")
+        image_context = data.get("context", "")
+        
+        # Validar que al menos hay mensaje o imagen
+        if not message and not image_base64:
+            return jsonify({
+                "status": "error",
+                "message": "Se requiere al menos un mensaje o una imagen"
+            }), 400
+        
+        results = []
+        
+        # PASO 1: Procesar MENSAJE (si existe)
+        if message.strip():
+            try:
+                chat_result = gemini_model.send_chat_message(session_id, message)
+                
+                if chat_result["status"] == "error":
+                    return jsonify({
+                        "status": "error",
+                        "message": "Error al procesar mensaje",
+                        "details": chat_result["message"]
+                    }), 500
+                
+                results.append({
+                    "type": "message",
+                    "status": "success",
+                    "response": chat_result["response"],
+                    "is_complete": chat_result.get("is_complete", False)
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Error procesando mensaje: {str(e)}"
+                }), 500
+        
+        # PASO 2: Procesar IMAGEN (si existe)
+        if image_base64:
+            try:
+                # Decodificar imagen
+                try:
+                    image_data = base64.b64decode(image_base64)
+                except Exception:
+                    return jsonify({
+                        "status": "error",
+                        "message": "Datos de imagen en base64 inválidos"
+                    }), 400
+                
+                # Prompt especializado para análisis de riesgos
+                analysis_prompt = f"""Analiza esta imagen desde la perspectiva de SEGURIDAD INDUSTRIAL y EVALUACIÓN DE RIESGOS QUÍMICOS.
+
+Contexto del usuario: {image_context}
+
+PRIMERO, clasifica la imagen en una de estas categorías:
+- "lugar_trabajo": Instalaciones, naves, áreas de trabajo
+- "equipamiento_operadores": EPIs, equipos de protección, operadores
+- "equipos_industriales": Maquinaria, sistemas de transferencia, contenedores
+- "sistemas_seguridad": Duchas de emergencia, extintores, señalización
+- "almacenamiento": Áreas de almacén, estanterías, contenedores de químicos
+- "otros": Cualquier otra cosa relevante
+
+SEGUNDO, proporciona un análisis detallado identificando:
+
+1. **ENTORNO FÍSICO:**
+   - Interior/exterior
+   - Dimensiones aproximadas del espacio
+   - Condiciones generales (limpieza, orden, etc.)
+
+2. **SISTEMAS DE VENTILACIÓN:**
+   - Ventilación natural (ventanas, aberturas)
+   - Ventilación mecánica (extractores, sistemas HVAC)
+   - Extracción localizada en puntos de trabajo
+
+3. **EQUIPOS DE SEGURIDAD VISIBLES:**
+   - Equipos de protección individual (EPIs)
+   - Duchas de emergencia o lavaojos
+   - Extintores o sistemas contra incendios
+   - Señalización de seguridad
+
+4. **ALMACENAMIENTO Y MANIPULACIÓN:**
+   - Contenedores de químicos visibles
+   - Sistemas de contención de derrames
+   - Equipos de transferencia (bombas, mangueras)
+   - Zonas de trabajo
+
+5. **FACTORES DE RIESGO OBSERVABLES:**
+   - Posibles fuentes de ignición
+   - Áreas de confinamiento
+   - Condiciones que podrían afectar la dispersión
+   - Cualquier condición insegura visible
+
+Estructura tu respuesta así:
+CATEGORÍA: [categoría identificada]
+DESCRIPCIÓN: [análisis detallado]
+
+Sé específico y técnico en tu análisis. Si no puedes identificar algo claramente, indícalo."""
+                
+                # Analizar imagen con Gemini Vision
+                analysis_result = gemini_model.analyze_image(image_data, analysis_prompt)
+                
+                if analysis_result["status"] == "error":
+                    return jsonify({
+                        "status": "error",
+                        "message": "Error al analizar la imagen",
+                        "details": analysis_result["message"]
+                    }), 500
+                
+                # Procesar análisis estructurado
+                analysis_text = analysis_result['analysis']
+                categoria = "otros"
+                descripcion = analysis_text
+                
+                if "CATEGORÍA:" in analysis_text and "DESCRIPCIÓN:" in analysis_text:
+                    lines = analysis_text.split('\n')
+                    for line in lines:
+                        if line.startswith("CATEGORÍA:"):
+                            categoria = line.replace("CATEGORÍA:", "").strip()
+                        elif line.startswith("DESCRIPCIÓN:"):
+                            desc_index = analysis_text.find("DESCRIPCIÓN:")
+                            descripcion = analysis_text[desc_index + len("DESCRIPCIÓN:"):].strip()
+                            break
+                
+                # Metadata de la imagen
+                imagen_metadata = {
+                    "tipo": categoria,
+                    "descripcion": descripcion,
+                    "timestamp": analysis_result["timestamp"]
+                }
+                
+                # FUNCIONALIDAD IDÉNTICA AL ENDPOINT /analyze-image
+                # Enviar el análisis como mensaje del chatbot con contexto estructurado
+                chat_message = f"""He analizado la imagen que enviaste. 
+
+📸 **Tipo de imagen:** {categoria}
+
+🔍 **Análisis detallado:**
+{descripcion}
+
+Esta información visual será incluida en el reporte final de evaluación de riesgos. Continuemos con la recopilación de datos restantes."""
+                
+                # Enviar mensaje con análisis a la sesión de chat
+                chat_result = gemini_model.send_chat_message(session_id, chat_message)
+                
+                if chat_result["status"] == "error":
+                    return jsonify({
+                        "status": "error",
+                        "message": "Error al procesar análisis en el chat",
+                        "details": chat_result["message"]
+                    }), 500
+                
+                results.append({
+                    "type": "image_analysis",
+                    "status": "success",
+                    "image_analysis": {
+                        "raw_analysis": analysis_result["analysis"],
+                        "structured": imagen_metadata
+                    },
+                    "chat_response": chat_result["response"]
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Error procesando imagen: {str(e)}"
+                }), 500
+        
+        # RESPUESTA CONSOLIDADA
+        # Determinar si la evaluación está completa (buscar en todas las respuestas)
+        is_complete = False
+        all_responses = []
+        
+        for result in results:
+            if result["type"] == "message" and result.get("is_complete", False):
+                is_complete = True
+            
+            if "response" in result:
+                all_responses.append(result["response"])
+            elif "chat_response" in result:
+                all_responses.append(result["chat_response"])
+        
+        # También verificar si cualquier respuesta contiene JSON completo
+        if not is_complete:
+            for response in all_responses:
+                try:
+                    import json
+                    if response.strip().startswith("{") and response.strip().endswith("}"):
+                        parsed_json = json.loads(response)
+                        if parsed_json.get("status") == "COMPLETO":
+                            is_complete = True
+                            break
+                except:
+                    continue
+        
+        chat_responses = all_responses
+        
+        return jsonify({
+            "status": "success",
+            "session_id": session_id,
+            "combined_response": "\n\n".join(chat_responses),
+            "individual_results": results,
+            "is_complete": is_complete,
+            "processing_summary": {
+                "message_processed": bool(message.strip()),
+                "image_processed": bool(image_base64),
+                "total_operations": len(results)
+            },
+            "timestamp": datetime.now().isoformat()
         })
         
     except Exception as e:
