@@ -5,6 +5,9 @@ import uuid
 from datetime import datetime
 from app.config.config import Config
 
+from app.controllers.risk_chatbot_controller import risk_chatbot_bp
+from app.services.risk_enricher import risk_enricher
+
 # Blueprint para el flujo principal orquestador
 main_flow_bp = Blueprint('main_flow', __name__)
 
@@ -33,173 +36,89 @@ def main_flow_home():
     })
 
 @main_flow_bp.route('/evaluate-risk', methods=['POST'])
-def handle_full_risk_evaluation():
+def evaluate_risk_complete():
     """
-    Endpoint principal para evaluación completa de riesgos
-    Orquesta todo el flujo: Recopilación → RAG → Cálculo → Reporte
+    FLUJO COMPLETO DE EVALUACIÓN DE RIESGO
+    
+    Paso 1: Chatbot → Paso 2: RAG → Paso 3: Cálculo → Paso 4: Reporte
     """
     try:
         data = request.get_json()
+        
         if not data:
             return jsonify({
                 "status": "error",
-                "message": "No data provided"
+                "message": "No se proporcionaron datos de entrada",
+                "timestamp": datetime.now().isoformat()
             }), 400
         
-        initial_prompt = data.get("prompt")
-        if not initial_prompt:
+        # PASO 1: Procesar con chatbot (si no viene ya procesado)
+        if 'chatbot_result' not in data:
             return jsonify({
-                "status": "error",
-                "message": "Prompt is required"
+                "status": "error", 
+                "message": "Se requiere resultado del chatbot. Usar endpoint /evaluate-risk/interactive primero.",
+                "timestamp": datetime.now().isoformat()
             }), 400
         
-        eval_id = f"eval-{uuid.uuid4().hex[:8]}"
+        chatbot_result = data['chatbot_result']
         
-        # -------------------------------------------------------------------
-        # PASO 1: RECOPILACIÓN DE DATOS (Módulo Chatbot Experto)
-        # -------------------------------------------------------------------
+        # PASO 2: ENRIQUECIMIENTO CON MULTI-CONSULTA DIRIGIDA
+        print("INICIANDO PASO 2: ENRIQUECIMIENTO CON MULTI-CONSULTA DIRIGIDA")
+        enrichment_result = risk_enricher.enrich_task_data(chatbot_result)
         
-        print(f"🚀 [{eval_id}] Iniciando evaluación completa...")
-        print(f"📋 [{eval_id}] PASO 1: Recopilación de datos")
-        
-        # 1.1 Crear sesión de chatbot
-        start_response = requests.post(f'{INTERNAL_BASE_URL}/risk-chat/start', json={
-            "session_id": f"session-{eval_id}"
-        })
-        
-        if start_response.status_code != 200:
+        if enrichment_result.get("status") == "error":
             return jsonify({
                 "status": "error",
-                "message": "Error al iniciar módulo de recopilación",
-                "details": start_response.text
+                "message": f"Error en enriquecimiento: {enrichment_result.get('message')}",
+                "paso_fallido": "Paso 2 - Enriquecimiento RAG",
+                "timestamp": datetime.now().isoformat()
             }), 500
         
-        session_data = start_response.json()
-        session_id = session_data["session_id"]
+        # PASO 3: Cálculo de riesgo (TODO: Implementar cuando esté disponible)
+        print("⚙️ PASO 3: CÁLCULO DE RIESGO (Pendiente implementación)")
+        calculation_result = {
+            "status": "pending",
+            "message": "Módulo de cálculo de riesgo en desarrollo",
+            "datos_para_calculo": enrichment_result["datos_enriquecidos"]
+        }
         
-        # 1.2 Enviar prompt inicial
-        message_response = requests.post(
-            f'{INTERNAL_BASE_URL}/risk-chat/{session_id}/message',
-            json={"message": initial_prompt}
-        )
+        # PASO 4: Generación de reporte (TODO: Implementar cuando esté disponible)  
+        print("📄 PASO 4: GENERACIÓN DE REPORTE (Pendiente implementación)")
+        report_result = {
+            "status": "pending",
+            "message": "Módulo de generación de reportes en desarrollo"
+        }
         
-        if message_response.status_code != 200:
-            return jsonify({
-                "status": "error",
-                "message": "Error en módulo de recopilación",
-                "details": message_response.text
-            }), 500
-        
-        chatbot_result = message_response.json()
-        
-        # 1.3 Verificar si necesita más información del usuario
-        if not chatbot_result.get("is_complete"):
-            return jsonify({
-                "status": "pending_user_input",
-                "eval_id": eval_id,
-                "session_id": session_id,
-                "next_question": chatbot_result.get("response"),
-                "step": "data_collection",
-                "progress": {
-                    "current_step": 1,
-                    "total_steps": 4,
-                    "step_name": "Recopilación de Datos"
-                }
-            }), 202  # Accepted - Requiere más input
-        
-        # 1.4 Parsear JSON final del chatbot
-        try:
-            # El chatbot devuelve JSON como string en response
-            datos_tarea_json = json.loads(chatbot_result["response"])
-            if datos_tarea_json.get("status") != "COMPLETO":
-                raise ValueError("Datos incompletos del chatbot")
-            
-            datos_tarea = datos_tarea_json["datos_tarea"]
-            print(f"✅ [{eval_id}] PASO 1 COMPLETADO: Datos recopilados")
-            
-        except (json.JSONDecodeError, ValueError) as e:
-            return jsonify({
-                "status": "error",
-                "message": "Error al procesar datos del chatbot",
-                "details": str(e)
-            }), 500
-        
-        # -------------------------------------------------------------------
-        # PASO 2: ENRIQUECIMIENTO RAG (Módulo de tu compañero)
-        # -------------------------------------------------------------------
-        
-        print(f"📚 [{eval_id}] PASO 2: Enriquecimiento con RAG")
-        
-        # Preparar datos para RAG
-        quimicos = datos_tarea.get('quimicos_involucrados', [])
-        pais = datos_tarea.get('contexto_fisico', {}).get('ubicacion_pais', 'España')
-        
-        # Llamar al módulo RAG (cuando esté implementado por tu compañero)
-        rag_data = _call_rag_module(quimicos, pais, eval_id)
-        
-        if rag_data["status"] == "error":
-            return jsonify({
-                "status": "error",
-                "message": "Error en módulo RAG",
-                "details": rag_data.get("message")
-            }), 500
-        
-        print(f"✅ [{eval_id}] PASO 2 COMPLETADO: Datos enriquecidos con RAG")
-        
-        # -------------------------------------------------------------------
-        # PASO 3: CÁLCULO DE RIESGOS (Módulo de cálculo)
-        # -------------------------------------------------------------------
-        
-        print(f"🧮 [{eval_id}] PASO 3: Cálculo de riesgos")
-        
-        # Llamar al motor de cálculo
-        calculo_result = _call_calculation_engine(datos_tarea, rag_data["datos_enriquecidos"], eval_id)
-        
-        if calculo_result["status"] == "error":
-            return jsonify({
-                "status": "error",
-                "message": "Error en módulo de cálculo",
-                "details": calculo_result.get("message")
-            }), 500
-        
-        print(f"✅ [{eval_id}] PASO 3 COMPLETADO: Riesgos calculados")
-        
-        # -------------------------------------------------------------------
-        # PASO 4: REPORTE FINAL (Módulo de reportes)
-        # -------------------------------------------------------------------
-        
-        print(f"📄 [{eval_id}] PASO 4: Generación de reporte")
-        
-        reporte_final = _generate_final_report(datos_tarea, rag_data["datos_enriquecidos"], calculo_result["resultado"], eval_id)
-        
-        print(f"🎉 [{eval_id}] EVALUACIÓN COMPLETA!")
-        
-        # -------------------------------------------------------------------
-        # RESPUESTA FINAL
-        # -------------------------------------------------------------------
-        
+        # RESULTADO CONSOLIDADO
         return jsonify({
-            "status": "EVALUACION_COMPLETA",
-            "eval_id": eval_id,
-            "timestamp": datetime.now().isoformat(),
-            "resultado_final": {
-                "datos_recopilados": datos_tarea,
-                "datos_enriquecidos": rag_data["datos_enriquecidos"],
-                "calculo_riesgos": calculo_result["resultado"],
-                "reporte": reporte_final
+            "status": "success",
+            "message": "Evaluación de riesgo completada exitosamente",
+            "flujo_completo": {
+                "paso_1_chatbot": {
+                    "status": "completed",
+                    "datos_recopilados": chatbot_result
+                },
+                "paso_2_enriquecimiento": {
+                    "status": "completed", 
+                    "strategy": "Multi-Consulta Dirigida",
+                    "quimicos_procesados": enrichment_result.get("quimicos_procesados", []),
+                    "objetivos_fds_buscados": len(risk_enricher.OBJETIVOS_DATOS_FDS),
+                    "objetivos_legales_buscados": len(risk_enricher.OBJETIVOS_DATOS_LEGALES),
+                    "datos_enriquecidos": enrichment_result["datos_enriquecidos"]
+                },
+                "paso_3_calculo": calculation_result,
+                "paso_4_reporte": report_result
             },
-            "metadatos": {
-                "session_id": session_id,
-                "tiempo_total": "calculado_en_implementacion_final",
-                "modulos_ejecutados": ["chatbot", "rag", "calculo", "reporte"]
-            }
+            "timestamp": datetime.now().isoformat(),
+            "processing_time_seconds": "TODO: Implementar medición de tiempo"
         })
         
     except Exception as e:
         return jsonify({
             "status": "error",
-            "message": "Error interno del orquestador",
-            "details": str(e)
+            "message": str(e),
+            "paso_fallido": "Error general del orquestador",
+            "timestamp": datetime.now().isoformat()
         }), 500
 
 @main_flow_bp.route('/evaluate-risk/interactive', methods=['POST'])
@@ -338,6 +257,67 @@ def get_evaluation_status(eval_id):
             "status": "error",
             "message": str(e)
         }), 500
+
+@main_flow_bp.route('/enrich-data', methods=['POST'])
+def enrich_data_only():
+    """
+    ENDPOINT ESPECÍFICO PARA ENRIQUECIMIENTO DE DATOS
+    
+    Permite usar solo el Paso 2 (Multi-Consulta Dirigida) de forma independiente.
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "No se proporcionaron datos para enriquecer",
+                "timestamp": datetime.now().isoformat()
+            }), 400
+        
+        # Validar que tenga la estructura esperada del chatbot
+        if 'datos_tarea' not in data:
+            return jsonify({
+                "status": "error",
+                "message": "Formato inválido. Se esperan datos_tarea del chatbot.",
+                "formato_esperado": {
+                    "datos_tarea": {
+                        "quimicos_involucrados": ["quimico1", "quimico2"],
+                        "contexto_fisico": {"ubicacion_pais": "España"}
+                    }
+                },
+                "timestamp": datetime.now().isoformat()
+            }), 400
+        
+        # Ejecutar enriquecimiento con Multi-Consulta Dirigida
+        enrichment_result = risk_enricher.enrich_task_data(data)
+        
+        return jsonify(enrichment_result)
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "service": "RiskDataEnricher",
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@main_flow_bp.route('/enricher/status', methods=['GET'])
+def get_enricher_status():
+    """Estado del módulo de enriquecimiento"""
+    return jsonify(risk_enricher.get_status())
+
+@main_flow_bp.route('/enricher/objectives', methods=['GET'])
+def get_enricher_objectives():
+    """Obtener los objetivos de búsqueda configurados"""
+    return jsonify({
+        "objetivos_fds": risk_enricher.OBJETIVOS_DATOS_FDS,
+        "objetivos_legales": risk_enricher.OBJETIVOS_DATOS_LEGALES,
+        "total_objetivos_fds": len(risk_enricher.OBJETIVOS_DATOS_FDS),
+        "total_objetivos_legales": len(risk_enricher.OBJETIVOS_DATOS_LEGALES),
+        "estrategia": "Multi-Consulta Dirigida",
+        "descripcion": "Busca específicamente cada objetivo para cada químico de forma exhaustiva"
+    })
 
 # -------------------------------------------------------------------
 # FUNCIONES AUXILIARES PARA INTEGRACIÓN DE MÓDULOS

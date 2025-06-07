@@ -265,332 +265,229 @@ class GeminiModel:
             }
     
     def list_chat_sessions(self) -> Dict[str, Any]:
-        """Listar todas las sesiones de chat"""
-        sessions = []
+        """Listar todas las sesiones de chat activas"""
+        sessions_info = []
         for session_id, session_data in self._chat_sessions.items():
-            sessions.append({
+            sessions_info.append({
                 "session_id": session_id,
                 "created_at": session_data["created_at"],
-                "system_instruction": session_data.get("system_instruction", "None")
+                "system_instruction": bool(session_data.get("system_instruction"))
             })
         
         return {
             "status": "success",
-            "sessions": sessions,
-            "total_sessions": len(sessions),
+            "sessions": sessions_info,
+            "total_sessions": len(sessions_info),
             "timestamp": datetime.now().isoformat()
         }
     
     def get_model_info(self) -> Dict[str, Any]:
-        """Obtener información del modelo"""
+        """Obtener información del modelo actual"""
         return {
             "model_name": self.model_name,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "api_configured": bool(self.api_key),
-            "active_sessions": len(self._chat_sessions),
-            "timestamp": datetime.now().isoformat()
+            "client_active": bool(self.client),
+            "active_sessions": len(self._chat_sessions)
         }
 
-# Instancia global del modelo Gemini
-gemini_model = GeminiModel() 
-import os
-import logging
-from typing import Dict, Any, List, Optional
-from datetime import datetime
-
-try:
-    import google.generativeai as genai
-
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
-    logging.warning("Google Generative AI SDK no está instalado")
-
-from .rag_model import rag_model
-
-
-logger = logging.getLogger(__name__)
-
-
-class GeminiModel:
-    """Modelo para integrar con Gemini utilizando contexto de RAG"""
-
-    def __init__(self, model_name: Optional[str] = None):
-        # Si no se especifica modelo, usar el de configuración o el por defecto
-        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-        self.model = None
-        self.rag_model = rag_model
-
-        # Configurar Gemini si está disponible
-        if GEMINI_AVAILABLE:
-            self._initialize_gemini()
-        else:
-            logger.warning(
-                "Gemini SDK no disponible. Las funciones de IA estarán limitadas."
-            )
-
-    def _initialize_gemini(self):
-        """Inicializar la conexión con Gemini"""
+    # ======================
+    # MÉTODOS DE RAG
+    # ======================
+    
+    def query_with_context(self, query: str, context: str, temperature: float = 0.1) -> Dict[str, Any]:
+        """Realizar consulta con contexto específico (RAG)"""
+        if not self.client:
+            return {
+                "status": "error",
+                "message": "Gemini API no está configurada. Verifica GEMINI_API_KEY en .env",
+                "timestamp": datetime.now().isoformat()
+            }
+        
         try:
-            # Obtener API key desde variable de entorno
-            api_key = os.getenv("GEMINI_API_KEY")
-            if not api_key:
-                logger.error(
-                    "GEMINI_API_KEY no está configurada en las variables de entorno"
-                )
-                return
-
-            # Configurar la API
-            genai.configure(api_key=api_key)
-
-            # Inicializar el modelo
-            self.model = genai.GenerativeModel(self.model_name)
-
-            logger.info(f"Gemini {self.model_name} inicializado exitosamente")
-
-        except Exception as e:
-            logger.error(f"Error inicializando Gemini: {str(e)}")
-            self.model = None
-
-    def query_with_context(
-        self,
-        query: str,
-        max_context_tokens: int = 4000,
-        search_results: int = 10,
-        system_prompt: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Realizar consulta a Gemini con contexto de RAG"""
-        try:
-            if not self.model:
-                return self._fallback_response(query)
-
-            # Obtener contexto relevante del RAG
-            context = self.rag_model.get_context_for_query(
-                query=query, max_tokens=max_context_tokens, n_results=search_results
+            prompt = self._build_prompt(query, context)
+            
+            config = types.GenerateContentConfig(
+                max_output_tokens=self.max_tokens,
+                temperature=temperature
             )
-
-            # Construir el prompt completo
-            full_prompt = self._build_prompt(query, context, system_prompt)
-
-            # Realizar la consulta a Gemini
-            response = self.model.generate_content(full_prompt)
-
-            # Obtener metadatos de la búsqueda RAG
-            search_metadata = self.rag_model.search(query, n_results=search_results)
-
+            
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=config
+            )
+            
             return {
                 "status": "success",
-                "query": query,
                 "response": response.text,
-                "context_used": bool(context),
-                "context_length": len(context) if context else 0,
-                "sources": [
-                    {
-                        "id": result["id"],
-                        "file_path": result["metadata"].get("file_path"),
-                        "file_type": result["metadata"].get("file_type"),
-                        "distance": result["distance"],
-                    }
-                    for result in search_metadata["results"]
-                ],
-                "generated_at": datetime.now().isoformat(),
-                "model_used": self.model_name,
+                "query": query,
+                "context_length": len(context),
+                "temperature": temperature,
+                "timestamp": datetime.now().isoformat()
             }
-
+            
         except Exception as e:
-            logger.error(f"Error en consulta con contexto: {str(e)}")
+            # Fallback response en caso de error
+            fallback = self._fallback_response(query)
             return {
                 "status": "error",
                 "message": str(e),
-                "fallback_response": self._fallback_response(query),
+                "fallback_response": fallback,
+                "query": query,
+                "timestamp": datetime.now().isoformat()
             }
-
-    def query_without_context(
-        self, query: str, system_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Realizar consulta directa a Gemini sin contexto de RAG"""
+    
+    def query_without_context(self, query: str, temperature: float = 0.7) -> Dict[str, Any]:
+        """Realizar consulta sin contexto específico"""
+        if not self.client:
+            return {
+                "status": "error",
+                "message": "Gemini API no está configurada. Verifica GEMINI_API_KEY en .env",
+                "timestamp": datetime.now().isoformat()
+            }
+        
         try:
-            if not self.model:
-                return self._fallback_response(query)
-
-            # Construir prompt sin contexto
-            if system_prompt:
-                full_prompt = f"{system_prompt}\n\nUsuario: {query}"
-            else:
-                full_prompt = query
-
-            # Realizar la consulta a Gemini
-            response = self.model.generate_content(full_prompt)
-
+            config = types.GenerateContentConfig(
+                max_output_tokens=self.max_tokens,
+                temperature=temperature
+            )
+            
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=query,
+                config=config
+            )
+            
             return {
                 "status": "success",
-                "query": query,
                 "response": response.text,
-                "context_used": False,
-                "generated_at": datetime.now().isoformat(),
-                "model_used": self.model_name,
+                "query": query,
+                "temperature": temperature,
+                "timestamp": datetime.now().isoformat()
             }
-
+            
         except Exception as e:
-            logger.error(f"Error en consulta sin contexto: {str(e)}")
             return {
                 "status": "error",
                 "message": str(e),
-                "fallback_response": self._fallback_response(query),
+                "query": query,
+                "timestamp": datetime.now().isoformat()
             }
-
-    def chat_with_context(
-        self, messages: List[Dict[str, str]], max_context_tokens: int = 3000
-    ) -> Dict[str, Any]:
-        """Mantener una conversación con contexto de RAG basado en el último mensaje"""
+    
+    def chat_with_context(self, session_id: str, message: str, context: str, temperature: float = 0.1) -> Dict[str, Any]:
+        """Chat con contexto específico (RAG conversacional)"""
+        if session_id not in self._chat_sessions:
+            # Crear sesión si no existe
+            system_instruction = f"""Eres un asistente especializado. 
+            Utiliza el siguiente contexto para responder consultas de forma precisa y útil:
+            
+            CONTEXTO:
+            {context}
+            
+            Responde basándote en este contexto siempre que sea relevante."""
+            
+            create_result = self.create_chat_session(session_id, system_instruction)
+            if create_result["status"] == "error":
+                return create_result
+        
         try:
-            if not self.model:
-                return self._fallback_response("Chat no disponible")
-
-            if not messages:
-                return {"status": "error", "message": "No hay mensajes"}
-
-            # Obtener el último mensaje del usuario
-            last_message = messages[-1]["content"]
-
-            # Obtener contexto para el último mensaje
-            context = self.rag_model.get_context_for_query(
-                query=last_message, max_tokens=max_context_tokens, n_results=8
-            )
-
-            # Construir historial de conversación
-            conversation_history = "\n".join(
-                [f"{msg['role']}: {msg['content']}" for msg in messages[:-1]]
-            )
-
-            # Construir prompt completo con historial y contexto
-            prompt_parts = []
-
-            if context:
-                prompt_parts.append(
-                    f"Contexto relevante de los documentos:\n{context}\n"
-                )
-
-            if conversation_history:
-                prompt_parts.append(
-                    f"Historial de conversación:\n{conversation_history}\n"
-                )
-
-            prompt_parts.append(f"Usuario: {last_message}")
-
-            full_prompt = "\n".join(prompt_parts)
-
-            # Generar respuesta
-            response = self.model.generate_content(full_prompt)
-
+            chat = self._chat_sessions[session_id]["chat"]
+            response = chat.send_message(message)
+            
             return {
                 "status": "success",
                 "response": response.text,
-                "context_used": bool(context),
-                "context_length": len(context) if context else 0,
-                "generated_at": datetime.now().isoformat(),
-                "model_used": self.model_name,
+                "user_message": message,
+                "session_id": session_id,
+                "context_length": len(context),
+                "temperature": temperature,
+                "timestamp": datetime.now().isoformat()
             }
-
+            
         except Exception as e:
-            logger.error(f"Error en chat con contexto: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-    def summarize_document(self, document_id: str) -> Dict[str, Any]:
-        """Generar un resumen de un documento específico"""
+            fallback = self._fallback_response(message)
+            return {
+                "status": "error",
+                "message": str(e),
+                "fallback_response": fallback,
+                "user_message": message,
+                "session_id": session_id,
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def summarize_document(self, content: str, max_length: int = 500) -> Dict[str, Any]:
+        """Resumir documento o contenido largo"""
+        if not self.client:
+            return {
+                "status": "error",
+                "message": "Gemini API no está configurada. Verifica GEMINI_API_KEY en .env",
+                "timestamp": datetime.now().isoformat()
+            }
+        
         try:
-            if not self.model:
-                return self._fallback_response("Resumen no disponible")
-
-            # Obtener contenido del documento
-            document_content = self.rag_model.get_document_content(document_id)
-
-            if not document_content:
-                return {"status": "error", "message": "Documento no encontrado"}
-
-            # Prompt para resumir
-            prompt = f"""
-Por favor, genera un resumen conciso y comprensivo del siguiente documento:
-
---- DOCUMENTO ---
-{document_content}
---- FIN DOCUMENTO ---
-
-El resumen debe:
-- Capturar los puntos principales y conceptos clave
-- Ser claro y bien estructurado
-- Mantener un tono profesional
-- Tener aproximadamente 200-300 palabras
-"""
-
-            # Generar resumen
-            response = self.model.generate_content(prompt)
-
+            prompt = f"""Resume el siguiente contenido en máximo {max_length} palabras.
+            Incluye los puntos más importantes y mantén la información clave:
+            
+            CONTENIDO:
+            {content}
+            
+            RESUMEN:"""
+            
+            config = types.GenerateContentConfig(
+                max_output_tokens=min(self.max_tokens, max_length * 2),
+                temperature=0.1
+            )
+            
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=config
+            )
+            
             return {
                 "status": "success",
-                "document_id": document_id,
                 "summary": response.text,
-                "generated_at": datetime.now().isoformat(),
-                "model_used": self.model_name,
+                "original_length": len(content),
+                "summary_length": len(response.text),
+                "max_length": max_length,
+                "timestamp": datetime.now().isoformat()
             }
-
+            
         except Exception as e:
-            logger.error(f"Error generando resumen: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            return {
+                "status": "error",
+                "message": str(e),
+                "content_length": len(content),
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def _build_prompt(self, query: str, context: str) -> str:
+        """Construir prompt con contexto para RAG"""
+        return f"""Eres un asistente especializado que responde preguntas basándose en el contexto proporcionado.
 
-    def _build_prompt(
-        self, query: str, context: str, system_prompt: Optional[str] = None
-    ) -> str:
-        """Construir el prompt completo para Gemini"""
-        prompt_parts = []
+CONTEXTO:
+{context}
 
-        # Sistema prompt por defecto si no se proporciona uno
-        if not system_prompt:
-            system_prompt = """Eres un asistente inteligente que ayuda a responder preguntas basándose en documentos proporcionados como contexto.
+PREGUNTA: {query}
 
-Instrucciones:
-1. Utiliza principalmente la información del contexto proporcionado para responder
-2. Si la información no está en el contexto, indícalo claramente
-3. Proporciona respuestas claras, precisas y bien estructuradas
-4. Cita las fuentes cuando sea relevante
-5. Si la pregunta no puede ser respondida con el contexto, ofrece una respuesta general útil"""
+INSTRUCCIONES:
+- Responde únicamente basándote en la información del contexto
+- Si la información no está en el contexto, indica que no tienes suficiente información
+- Sé preciso y conciso en tu respuesta
+- Cita información específica del contexto cuando sea relevante
 
-        prompt_parts.append(system_prompt)
-
-        if context:
-            prompt_parts.append(f"\nContexto de los documentos:\n{context}")
-
-        prompt_parts.append(f"\nPregunta del usuario: {query}")
-        prompt_parts.append("\nRespuesta:")
-
-        return "\n".join(prompt_parts)
-
-    def _fallback_response(self, query: str) -> Dict[str, Any]:
-        """Respuesta de respaldo cuando Gemini no está disponible"""
-        return {
-            "status": "success",
-            "query": query,
-            "response": "Lo siento, el servicio de IA no está disponible en este momento. Por favor, verifica la configuración de la API de Gemini.",
-            "context_used": False,
-            "fallback": True,
-            "generated_at": datetime.now().isoformat(),
-            "model_used": "fallback",
-        }
-
+RESPUESTA:"""
+    
+    def _fallback_response(self, query: str) -> str:
+        """Generar respuesta de fallback cuando hay errores"""
+        return f"""Lo siento, no pude procesar tu consulta '{query}' en este momento debido a un error técnico. 
+        Por favor, intenta reformular tu pregunta o contacta al administrador del sistema."""
+    
     def is_available(self) -> bool:
-        """Verificar si Gemini está disponible y configurado"""
-        return GEMINI_AVAILABLE and self.model is not None
-
-    def get_model_info(self) -> Dict[str, Any]:
-        """Obtener información sobre el modelo"""
-        return {
-            "model_name": self.model_name,
-            "available": self.is_available(),
-            "gemini_sdk_installed": GEMINI_AVAILABLE,
-            "api_key_configured": bool(os.getenv("GEMINI_API_KEY")),
-        }
-
+        """Verificar si el servicio está disponible"""
+        return bool(self.client and self.api_key)
 
 # Instancia global del modelo Gemini
 gemini_model = GeminiModel()

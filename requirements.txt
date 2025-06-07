@@ -5,10 +5,10 @@ requests
 google-genai
 pillow
 python-dotenv
-flask==3.0.0
-flask-cors==4.0.0
-gradio==4.15.0
-requests==2.31.0
+flask
+flask-cors
+gradio
+requests
 # RAG Dependencies
 chromadb==0.4.22
 langchain==0.1.0
@@ -23,8 +23,6 @@ python-docx==1.1.0
 Pillow==10.1.0
 pytesseract==0.3.10
 opencv-python==4.8.1.78
-# Google Gemini SDK
-google-generativeai==0.3.2
 # Additional utilities
-python-magic==0.4.27
 tiktoken==0.5.2
+python-magic

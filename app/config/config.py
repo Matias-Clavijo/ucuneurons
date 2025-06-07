@@ -10,13 +10,13 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY") or "dev-secret-key-change-in-production"
     DEBUG = os.environ.get("FLASK_DEBUG", "True").lower() == "true"
 
-    # Configuración de la API
+    # Configuración de la API (Puerto 5001 para evitar conflicto con AirPlay de macOS)
     API_HOST = os.environ.get('API_HOST', '0.0.0.0')
     API_PORT = int(os.environ.get('API_PORT', 5001))
     
-    # Configuración de Gradio
+    # Configuración de Gradio (Puerto 7861 para evitar conflictos)
     GRADIO_HOST = os.environ.get('GRADIO_HOST', '0.0.0.0')
-    GRADIO_PORT = int(os.environ.get('GRADIO_PORT', 7860))
+    GRADIO_PORT = int(os.environ.get('GRADIO_PORT', 7861))
     GRADIO_SHARE = os.environ.get('GRADIO_SHARE', 'False').lower() == 'true'
     
     # Configuración de Gemini AI
@@ -24,14 +24,6 @@ class Config:
     GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
     GEMINI_MAX_TOKENS = int(os.environ.get('GEMINI_MAX_TOKENS', 1000000))
     GEMINI_TEMPERATURE = float(os.environ.get('GEMINI_TEMPERATURE', 0.4))
-    
-    API_HOST = os.environ.get("API_HOST", "0.0.0.0")
-    API_PORT = int(os.environ.get("API_PORT", 5000))
-
-    # Configuración de Gradio
-    GRADIO_HOST = os.environ.get("GRADIO_HOST", "0.0.0.0")
-    GRADIO_PORT = int(os.environ.get("GRADIO_PORT", 7860))
-    GRADIO_SHARE = os.environ.get("GRADIO_SHARE", "False").lower() == "true"
 
     # Configuración de ChromaDB
     CHROMA_HOST = os.environ.get("CHROMA_HOST", "localhost")
