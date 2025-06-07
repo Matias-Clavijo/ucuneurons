@@ -78,7 +78,24 @@ def process_text():
                 "message": "No data provided"
             }), 400
         
-        text = request_data.get("text", "")
+        # Reconstruir el texto a partir del payload
+        text_parts = [
+            f"Chemicals: {request_data.get('chemicals', '')}",
+            f"Place: {request_data.get('place', '')}",
+            f"Materials: {request_data.get('materials', '')}",
+            f"Frequency of use: {request_data.get('frequency', '')}",
+            f"Environment: {request_data.get('environment', '')}",
+            f"Process: {request_data.get('process', '')}",
+            f"Additional Info: {request_data.get('additional_info', '')}"
+        ]
+        text = "\n".join(filter(lambda x: ': ' not in x or x.split(': ')[1], text_parts))
+
+        if not text.strip():
+            return jsonify({
+                "status": "error", 
+                "message": "All fields are empty"
+            }), 400
+
         result = data_model.process_text(text)
         
         if "error" in result:

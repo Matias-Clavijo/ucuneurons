@@ -33,7 +33,20 @@ class GradioInterface:
             return {"status": "error", "message": str(e)}
     
     def process_text_interface(self, chemicals, place, materials, frequency, environment, additional_info, process, image_path) -> str:
-        """Procesar texto y datos de imagen usando la API"""
+        
+        required_fields = {
+            "Chemicals": chemicals,
+            "Place": place,
+            "Materials": materials,
+            "Frequency of use": frequency,
+            "Environment": environment,
+            "Process": process,
+        }
+        empty_fields = [name for name, value in required_fields.items() if not str(value).strip()]
+
+        if empty_fields:
+            missing_fields_str = ", ".join(empty_fields)
+            return f"❌ Please fill in all required fields. Missing: {missing_fields_str}."
         
         payload = {
             "chemicals": chemicals,
@@ -44,7 +57,7 @@ class GradioInterface:
             "additional_info": additional_info,
             "process": process,
         }
-        
+
         if image_path:
             payload['image_path'] = image_path
 
@@ -61,99 +74,12 @@ class GradioInterface:
 📏 **Longitud:** {data.get('length', 0)} caracteres
 📊 **Palabras:** {data.get('word_count', 0)}
 ⏰ **Procesado en:** {data.get('timestamp', '')}"""
-    
-    def get_counter_status(self) -> str:
-        """Obtener estado del contador"""
-        result = self._call_api("/api/counter")
         
-        if result.get("status") == "error":
-            return f"❌ Error: {result.get('message', 'Error desconocido')}"
-        
-        return f"🔢 **Contador actual:** {result.get('counter', 0)}"
-    
-    def increment_counter(self) -> str:
-        """Incrementar contador"""
-        result = self._call_api("/api/counter", "POST")
-        
-        if result.get("status") == "error":
-            return f"❌ Error: {result.get('message', 'Error desconocido')}"
-        
-        return f"✅ **Contador incrementado a:** {result.get('counter', 0)}"
-    
-    def reset_counter(self) -> str:
-        """Reiniciar contador"""
-        result = self._call_api("/api/counter", "DELETE")
-        
-        if result.get("status") == "error":
-            return f"❌ Error: {result.get('message', 'Error desconocido')}"
-        
-        return f"🔄 **Contador reiniciado a:** {result.get('counter', 0)}"
-    
-    def get_stats(self) -> str:
-        """Obtener estadísticas"""
-        result = self._call_api("/api/stats")
-        
-        if result.get("status") == "error":
-            return f"❌ Error: {result.get('message', 'Error desconocido')}"
-        
-        stats = result.get("stats", {})
-        return f"""📊 **Estadísticas de la Aplicación**
-
-📝 **Total de mensajes:** {stats.get('total_messages', 0)}
-🔢 **Contador actual:** {stats.get('current_counter', 0)}
-📋 **Entradas en historial:** {stats.get('history_entries', 0)}
-⏰ **Última actualización:** {stats.get('last_updated', 'N/A')}"""
-    
-    def get_history(self) -> str:
-        """Obtener historial"""
-        result = self._call_api("/api/history")
-        
-        if result.get("status") == "error":
-            return f"❌ Error: {result.get('message', 'Error desconocido')}"
-        
-        history = result.get("history", [])
-        if not history:
-            return "📋 **Historial vacío**"
-        
-        output = f"📋 **Historial de Operaciones** ({len(history)} entradas)\n\n"
-        
-        # Mostrar las últimas 10 entradas
-        for entry in history[-10:]:
-            action = entry.get("action", "unknown")
-            timestamp = entry.get("timestamp", "N/A")
-            output += f"• **{action}** - {timestamp}\n"
-        
-        if len(history) > 10:
-            output += f"\n... y {len(history) - 10} entradas más"
-        
-        return output
-    
-    def clear_history(self) -> str:
-        """Limpiar historial"""
-        result = self._call_api("/api/history", "DELETE")
-        
-        if result.get("status") == "error":
-            return f"❌ Error: {result.get('message', 'Error desconocido')}"
-        
-        return "✅ **Historial limpiado exitosamente**"
-    
-    def add_message(self, message: str) -> str:
-        """Agregar mensaje"""
-        if not message.strip():
-            return "❌ Por favor, ingresa un mensaje"
-        
-        result = self._call_api("/api/data", "POST", {"message": message})
-        
-        if result.get("status") == "error":
-            return f"❌ Error: {result.get('message', 'Error desconocido')}"
-        
-        return f"✅ **Mensaje agregado:** {message}"
-    
     def create_interface(self) -> gr.Blocks:
         """Crear la interfaz de Gradio"""
         
         with gr.Blocks(
-            title="Web App MVC - Gradio Interface",
+            title="Ucuneurons",
             theme=gr.themes.Base(),
             css="""
             .gradio-container {
