@@ -1,0 +1,17 @@
+.env
+*/__pycache__
+*_pycache__
+*venv*
+
+# RAG y ChromaDB local (cuando no se usa docker-compose)
+chroma_db/
+*.db
+*.sqlite
+
+# Archivos temporales de uploads
+uploads/
+temp/
+
+# Logs
+*.log
+logs/
