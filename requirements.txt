@@ -1,28 +1,37 @@
-flask
-flask-cors
-gradio
-requests
-google-genai
-pillow
-python-dotenv
-flask
-flask-cors
-gradio
-requests
-# RAG Dependencies
-chromadb==0.4.22
-langchain==0.1.0
-langchain-community==0.0.13
-sentence-transformers>=2.2.0,<3.0
-huggingface_hub<0.20
+# Flask API Core
+Flask==2.3.3
+Flask-CORS==4.0.0
+Werkzeug==2.3.7
+
+# Google Gemini AI
+google-generativeai==0.3.2
+python-dotenv==1.0.0
+
+# LangChain - Versiones compatibles
+langchain==0.0.350
+langchain-google-genai==0.0.6
+langchain-community==0.0.4
+
+# Vector Databases
+faiss-cpu==1.7.4
+
 # Document Processing
 PyPDF2==3.0.1
-pdfplumber==0.10.0
-python-docx==1.1.0
-# Image Processing
-Pillow==10.1.0
+python-docx==0.8.11
+python-magic==0.4.27
+pillow==10.0.1
 pytesseract==0.3.10
 opencv-python==4.8.1.78
-# Additional utilities
-tiktoken==0.5.2
-python-magic
+pdfplumber==0.9.0
+
+# Embeddings and ML
+sentence-transformers==2.2.2
+tiktoken==0.5.1
+
+# Utilities
+requests==2.31.0
+numpy==1.24.3
+
+# Additional dependencies for LangChain
+pydantic==2.5.3
+typing-extensions==4.8.0

@@ -3,8 +3,8 @@
 *_pycache__
 *venv*
 
-# RAG y ChromaDB local (cuando no se usa docker-compose)
-chroma_db/
+# RAG FAISS local
+faiss_index/
 *.db
 *.sqlite
 
