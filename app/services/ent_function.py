@@ -4,24 +4,20 @@ def calcular_riesgo_inhalacion_ntp937(
     vla_mg_m3: float = None,
     # Parámetros para Exposición Potencial
     cantidad_g_dia: float = 0,
-    clase_frecuencia: int = 0, 
-    # Parámetros para Volatilidad / Pulverulencia
-    es_solido: bool = False,
-    es_gas_o_spray: bool = False,
-    clase_pulverulencia: int = 0,
-    punto_ebullicion_C: float = 0,
-    temperatura_trabajo_C: float = 20,
+    clase_frecuencia: int = 0,
+    # Parámetro de Volatilidad (simplificado)
+    clase_volatilidad_o_pulverulencia: int = 1, # <-- PARÁMETRO NUEVO Y SIMPLIFICADO
     # Parámetros del Proceso y Protección
     clase_procedimiento: int = 4,
     clase_proteccion_colectiva: int = 4
 ):
     """
     Calcula la puntuación de riesgo por inhalación según la metodología NTP 937.
+    Esta versión espera la 'clase_volatilidad_o_pulverulencia' (1-3) directamente.
     """
 
     # --- 1. DETERMINACIÓN DEL RIESGO POTENCIAL ---
-
-    # 1.1. Clase de Peligro
+    # (Esta sección permanece igual)
     clases_h = {
         'H335': 2, 'H336': 2, 'H304': 3, 'H332': 3, 'H361': 3, 'H361d': 3, 'H361f': 3, 'H361fd': 3,
         'H362': 3, 'H371': 3, 'H373': 3, 'EUH071': 3, 'H331': 4, 'H334': 4, 'H341': 4, 'H351': 4,
@@ -41,53 +37,36 @@ def calcular_riesgo_inhalacion_ntp937(
         elif vla_mg_m3 <= 100: clase_peligro = 2
         else: clase_peligro = 1
 
-    # 1.2. Clase de Exposición Potencial
     if cantidad_g_dia < 100: clase_cantidad = 1
     elif cantidad_g_dia < 10000: clase_cantidad = 2
     elif cantidad_g_dia < 100000: clase_cantidad = 3
     elif cantidad_g_dia < 1000000: clase_cantidad = 4
     else: clase_cantidad = 5
 
-    # Se ha eliminado el bloque que convertía horas a clase de frecuencia.
-
     matriz_exposicion = {
-        (1,0):0, (1,1):1, (1,2):1, (1,3):1, (1,4):1,
-        (2,0):0, (2,1):2, (2,2):2, (2,3):2, (2,4):2,
-        (3,0):0, (3,1):3, (3,2):3, (3,3):3, (3,4):4,
-        (4,0):0, (4,1):3, (4,2):4, (4,3):4, (4,4):5,
-        (5,0):0, (5,1):4, (5,2):5, (5,3):5, (5,4):5
+        (1,0):0, (1,1):1, (1,2):1, (1,3):1, (1,4):1, (2,0):0, (2,1):2, (2,2):2, (2,3):2,
+        (2,4):2, (3,0):0, (3,1):3, (3,2):3, (3,3):3, (3,4):4, (4,0):0, (4,1):3, (4,2):4,
+        (4,3):4, (4,4):5, (5,0):0, (5,1):4, (5,2):5, (5,3):5, (5,4):5
     }
     clase_exposicion_potencial = matriz_exposicion.get((clase_cantidad, clase_frecuencia), 0)
 
-    # 1.3. Clase y Puntuación de Riesgo Potencial
     if clase_exposicion_potencial == 0:
         clase_riesgo_potencial = 0
     else:
         matriz_riesgo = {
-            (1,1):1, (1,2):1, (1,3):2, (1,4):3, (1,5):4,
-            (2,1):1, (2,2):1, (2,3):2, (2,4):3, (2,5):4,
-            (3,1):1, (3,2):2, (3,3):3, (3,4):4, (3,5):5,
-            (4,1):1, (4,2):2, (4,3):3, (4,4):4, (4,5):5,
-            (5,1):2, (5,2):3, (5,3):4, (5,4):5, (5,5):5
+            (1,1):1, (1,2):1, (1,3):2, (1,4):3, (1,5):4, (2,1):1, (2,2):1, (2,3):2, (2,4):3,
+            (2,5):4, (3,1):1, (3,2):2, (3,3):3, (3,4):4, (3,5):5, (4,1):1, (4,2):2, (4,3):3,
+            (4,4):4, (4,5):5, (5,1):2, (5,2):3, (5,3):4, (5,4):5, (5,5):5
         }
         clase_riesgo_potencial = matriz_riesgo.get((clase_exposicion_potencial, clase_peligro), 1)
 
     puntuaciones_riesgo = {0:0, 1: 1, 2: 10, 3: 100, 4: 1000, 5: 10000}
     p_riesgo_pot = puntuaciones_riesgo.get(clase_riesgo_potencial, 0)
 
-    # --- 2. DETERMINACIÓN DE VOLATILIDAD O PULVERULENCIA ---
-    clase_vol_pulv = 1
-    if es_gas_o_spray:
-        clase_vol_pulv = 3
-    elif es_solido:
-        clase_vol_pulv = clase_pulverulencia
-    else:
-        if punto_ebullicion_C < (1.2 * temperatura_trabajo_C) + 60: clase_vol_pulv = 3
-        elif punto_ebullicion_C < (1.6 * temperatura_trabajo_C) + 114: clase_vol_pulv = 2
-        else: clase_vol_pulv = 1
-
+    # --- 2. DETERMINACIÓN DE VOLATILIDAD O PULVERULENCIA (SIMPLIFICADO) ---
+    # Se ha eliminado toda la lógica de cálculo. Ahora se usa el parámetro directamente.
     puntuaciones_vol = {1: 1, 2: 10, 3: 100}
-    p_volatilidad = puntuaciones_vol.get(clase_vol_pulv, 1)
+    p_volatilidad = puntuaciones_vol.get(clase_volatilidad_o_pulverulencia, 1)
 
     # --- 3. DETERMINACIÓN DEL PROCEDIMIENTO DE TRABAJO ---
     puntuaciones_proc = {1: 0.001, 2: 0.05, 3: 0.5, 4: 1}
@@ -124,4 +103,5 @@ def calcular_riesgo_inhalacion_ntp937(
             "vla_correction_factor": fc_vla,
         }
     }
+
 

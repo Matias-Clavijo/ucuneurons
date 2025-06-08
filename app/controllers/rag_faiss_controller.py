@@ -512,16 +512,34 @@ Debes devolver tu análisis en un único bloque de código JSON, sin explicacion
             chemical_name, 
             temperature
         )
+        
+        # OBTENER CHUNKS DE FDS PARA USO DIRECTO EN FIELD PROMPTS
+        fds_chunks = ""
+        if chemical_name:
+            try:
+                search_query = f"ficha datos seguridad {chemical_name} FDS propiedades físicas estado físico punto ebullición peligros frases H VLA"
+                docs = rag_faiss_model.search_documents(search_query, k=15)
+                if docs:
+                    fds_chunks = "\n\n".join([
+                        f"CHUNK {i+1} - FDS {chemical_name.upper()}:\n{doc.page_content}" 
+                        for i, doc in enumerate(docs[:15])
+                    ])
+                else:
+                    fds_chunks = f"[ADVERTENCIA: No se encontraron datos de FDS para {chemical_name}]"
+            except Exception as e:
+                logger.error(f"Error obteniendo chunks para field prompts: {e}")
+                fds_chunks = f"[ERROR: No se pudieron recuperar datos de FDS para {chemical_name}]"
 
-        # Los 4 campos que debe devolver
+        # Los 5 campos que debe devolver
         fields_to_extract = request_data.get("fields", [
             "procedimiento_trabajo",
             "proteccion_colectiva", 
             "factor_vla",
-            "volatilidad"
+            "volatilidad",
+            "frases_h"
         ])
         
-        k = request_data.get("k", 4)  # Documentos por consulta
+        k = request_data.get("k", 5)  # Documentos por consulta
         requests_per_field = request_data.get("requests_per_field", 3)  # Requests por campo
         
         # Información del prompt maestra procesada
@@ -546,15 +564,86 @@ Debes devolver tu análisis en un único bloque de código JSON, sin explicacion
             for request_num in range(requests_per_field):
                 
                 # Crear prompt específico para este campo y request
+                field_specific_instructions = {
+                    "procedimiento_trabajo": """
+                    INSTRUCCIÓN ESPECÍFICA PARA PROCEDIMIENTO_TRABAJO:
+                    Clasifica el tipo de procedimiento de trabajo y devuelve SOLO el número:
+                    1 = DISPERSIVO (Manipulación de polvo, transferencia de líquido, pulverización, limpieza)
+                    2 = ABIERTO (Manipulación en recipientes abiertos, mezclado, transferencia)
+                    3 = CERRADO/ABIERTO REGULARMENTE (Procesos cerrados con apertura regular para muestreo)
+                    4 = CERRADO PERMANENTE (Procesos completamente cerrados, automatizados)
+                    
+                    Responde SOLO con JSON: {"procedimiento_trabajo": X} donde X es el número 1, 2, 3 o 4.
+                    """,
+                    
+                    "proteccion_colectiva": """
+                    INSTRUCCIÓN ESPECÍFICA PARA PROTECCIÓN_COLECTIVA:
+                    Clasifica el nivel de protección colectiva necesario y devuelve SOLO el número:
+                    1 = SIN PROTECCIÓN ESPECIAL
+                    2 = VENTILACIÓN GENERAL (Ventilación natural o forzada del área)
+                    3 = EXTRACCIÓN LOCALIZADA (Campanas, sistemas de extracción puntuales)
+                    4 = ENCERRAMIENTO (Cabinas cerradas, guantes integrados)
+                    5 = SISTEMAS AUTOMÁTICOS (Manejo robotizado, control remoto)
+                    
+                    Responde SOLO con JSON: {"proteccion_colectiva": X} donde X es el número 1, 2, 3, 4 o 5.
+                    """,
+                    
+                    "factor_vla": """
+                    INSTRUCCIÓN ESPECÍFICA PARA FACTOR_VLA:
+                    Calcula la puntuación VLA del 1 al 100 basándote en:
+                    - Busca VLA-ED, VLA-EC, TLV-TWA o valores límite en la FDS
+                    - Aplica estos rangos:
+                      * VLA > 100 ppm o mg/m³ → Puntuación 10-25
+                      * VLA 10-100 ppm o mg/m³ → Puntuación 26-50  
+                      * VLA 1-10 ppm o mg/m³ → Puntuación 51-75
+                      * VLA < 1 ppm o mg/m³ → Puntuación 76-100
+                    - Si no hay datos → Puntuación 100 (precaución máxima)
+                    
+                    Responde SOLO con JSON: {"factor_vla": X} donde X es un número del 1 al 100.
+                    """,
+                    
+                    "volatilidad": """
+                    INSTRUCCIÓN ESPECÍFICA PARA VOLATILIDAD:
+                    Analiza la volatilidad y devuelve SOLO el número de clase:
+                    1 = BAJA VOLATILIDAD (Sólidos a temperatura ambiente, líquidos con punto ebullición >150°C)
+                    2 = MEDIA VOLATILIDAD (Líquidos con punto ebullición 50-150°C)
+                    3 = ALTA VOLATILIDAD (Líquidos con punto ebullición <50°C, gases, vapores)
+                    
+                    Si faltan datos, usa regla de precaución: 3 (alta volatilidad).
+                    
+                    Responde SOLO con JSON: {"volatilidad": X} donde X es el número 1, 2 o 3.
+
+                                        """,
+                    
+                    "frases_h": """
+                    INSTRUCCIÓN ESPECÍFICA PARA FRASES H :
+                    Busca y extrae TODAS las frases H (códigos de peligro) de la FDS del químico.
+                    Las frases H son códigos como H315, H318, H335, H412, etc. que aparecen en:
+                    - Sección 2: Identificación de peligros
+                    - Sección 3: Composición/información sobre componentes
+                    - Otras secciones de la FDS
+                    - Si o si ingresa valores de frases H (siempre), no puedes devolver nada mas.
+                    
+                    Extrae SOLO los códigos H sin descripciones. Ejemplos:
+                    - Si encuentras "H315: Provoca irritación cutánea" → extraer "H315"
+                    - Si encuentras "H318, H335, H412" → extraer ["H318", "H335", "H412"]
+                    
+                    Responde SOLO con JSON: {"frases_h": ["H315", "H318", "H335"]} (lista de strings con unicamente los codigos H del elemento quimico dentro del FDS. NO ME DEVUELVAS TODO).
+                    Si no encuentras frases H, responde: {"frases_h": []}
+                    """
+                }
+                
+                specific_instruction = field_specific_instructions.get(field, f"Extrae información específica para: {field}")
+                
                 field_prompt = f"""
-                PROMPT MAESTRA PROCESADA:
-                {master_prompt}
+                DATOS DE LA FDS DEL QUÍMICO:
+                {fds_chunks}
                 
-                TAREA ESPECÍFICA:
-                Analiza toda la información anterior y extrae específicamente el valor para: {field}
+                TEMPERATURA DE TRABAJO: {temperature}
                 
-                REQUEST {request_num + 1}: Enfócate en identificar y extraer únicamente la información relacionada con {field}.
-                Proporciona el valor, clasificación o dato específico para este campo.
+                {specific_instruction}
+                
+                REQUEST {request_num + 1}: Procesa la información de la FDS y proporciona la respuesta específica para {field}.
                 """
                 
                 # Hacer consulta RAG
@@ -604,23 +693,45 @@ Debes devolver tu análisis en un único bloque de código JSON, sin explicacion
                 }
             }
 
+        # Extraer solo los valores numéricos de cada campo
+        simplified_results = {}
+        overall_confidence = 0
+        
+        for field, data in results.items():
+            # Tomar la respuesta más detallada
+            best_answer = data["summary"]["most_detailed_answer"]
+            field_confidence = data["summary"]["average_confidence"]
+            overall_confidence += field_confidence
+            
+            # Intentar extraer el valor numérico del JSON de respuesta
+            import json
+            try:
+                # Buscar JSON en la respuesta
+                start = best_answer.find('{')
+                end = best_answer.rfind('}') + 1
+                if start != -1 and end != 0:
+                    json_str = best_answer[start:end]
+                    parsed_json = json.loads(json_str)
+                    # Extraer el valor para este campo
+                    field_value = parsed_json.get(field, "Error: valor no encontrado")
+                else:
+                    field_value = "Error: JSON no válido"
+            except Exception as e:
+                field_value = f"Error parseando respuesta: {str(e)}"
+            
+            simplified_results[field] = field_value
+        
+        overall_confidence = round(overall_confidence / len(results), 1) if results else 0
+        
         return jsonify({
             "status": "success",
-            "prompt_info": prompt_info,
-            "fields_analyzed": fields_to_extract,
-            "results": results,
-            "processing_summary": {
-                "total_fields": len(fields_to_extract),
-                "requests_per_field": requests_per_field,
-                "total_requests_made": len(fields_to_extract) * requests_per_field,
-                "fields_with_consistent_answers": [
-                    field for field, data in results.items() 
-                    if data["summary"]["answer_consistency"]
-                ],
-                "average_confidence_overall": sum(
-                    results[field]["summary"]["average_confidence"] 
-                    for field in results
-                ) / len(results) if results else 0
+            "quimico_analizado": chemical_name,
+            "temperatura_trabajo": temperature,
+            "confidence_promedio": overall_confidence,
+            "resultados": simplified_results,
+            "resumen": {
+                "total_requests": len(fields_to_extract) * requests_per_field,
+                "campos_procesados": len(fields_to_extract)
             }
         })
 

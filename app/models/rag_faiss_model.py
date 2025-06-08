@@ -82,11 +82,20 @@ class RAGFAISSModel:
         """Cargar el vector store si existe"""
         try:
             if os.path.exists(self.index_path):
-                self.vector_store = FAISS.load_local(
-                    self.index_path,
-                    self.embeddings,
-                    allow_dangerous_deserialization=True,
-                )
+                # Intentar cargar con el parámetro nuevo de seguridad
+                try:
+                    self.vector_store = FAISS.load_local(
+                        self.index_path,
+                        self.embeddings,
+                        allow_dangerous_deserialization=True,
+                    )
+                except TypeError:
+                    # Si falla, intentar sin el parámetro (versiones más nuevas)
+                    logger.info("Intentando cargar FAISS sin allow_dangerous_deserialization...")
+                    self.vector_store = FAISS.load_local(
+                        self.index_path,
+                        self.embeddings,
+                    )
                 logger.info(f"Vector store cargado desde {self.index_path}")
             else:
                 logger.info("No existe vector store previo")

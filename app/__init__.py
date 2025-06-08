@@ -17,13 +17,13 @@ def create_app():
     from app.controllers.gemini_controller import gemini_bp
     from app.controllers.risk_chatbot_controller import risk_chatbot_bp
     from app.controllers.main_flow_controller import main_flow_bp
-    from app.controllers.rag_controller import rag_bp
+    from app.controllers.rag_faiss_controller import rag_faiss_bp
     
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(gemini_bp, url_prefix='/ai')
     app.register_blueprint(risk_chatbot_bp, url_prefix='/risk-chat')
     app.register_blueprint(main_flow_bp)
-    app.register_blueprint(rag_bp, url_prefix="/api/rag")
+    app.register_blueprint(rag_faiss_bp, url_prefix="/api/rag-faiss")
 
     return app

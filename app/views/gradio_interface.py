@@ -22,9 +22,9 @@ class GradioInterface:
             url = f"{self.api_base_url}{endpoint}"
 
             if method == "GET":
-                response = requests.get(url, timeout=60)  # 60 segundos timeout
+                response = requests.get(url, timeout=300)  # 5 minutos timeout
             elif method == "POST":
-                response = requests.post(url, json=data, timeout=60)  # 60 segundos timeout
+                response = requests.post(url, json=data, timeout=300)  # 5 minutos timeout
             else:
                 return {"status": "error", "message": f"Método {method} no soportado"}
 
@@ -38,7 +38,7 @@ class GradioInterface:
         except requests.exceptions.Timeout:
             return {
                 "status": "error", 
-                "message": f"Timeout: La API tardó más de 60 segundos en responder. El análisis puede estar tardando demasiado."
+                "message": f"Timeout: La API tardó más de 5 minutos en responder. El análisis de 12 requests al LLM puede requerir más tiempo."
             }
         except requests.exceptions.RequestException as e:
             return {
@@ -90,7 +90,7 @@ class GradioInterface:
             "chemical_name": chemicals,
             "temperature": "No proporcionada",  # Puedes agregar un campo para esto
             "requests_per_field": 3,
-            "fields": ["procedimiento_trabajo", "proteccion_colectiva", "factor_vla", "volatilidad"]
+            "fields": ["procedimiento_trabajo", "proteccion_colectiva", "factor_vla", "volatilidad", "frases_h"]
         }
         
         print(f"🚀 Calling API endpoint: /api/rag-faiss/analyze-multi-field")
