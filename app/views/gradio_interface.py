@@ -86,7 +86,7 @@ class GradioInterface:
         print("Sending payload to API:", payload)
         
         # Preparar datos para el endpoint analyze-multi-field
-        api_payload = {
+        npt_api_payload = {
             "chemical_name": chemicals,
             "temperature": "No proporcionada",  # Puedes agregar un campo para esto
             "requests_per_field": 3,
@@ -94,10 +94,11 @@ class GradioInterface:
         }
         
         print(f"🚀 Calling API endpoint: /api/rag-faiss/analyze-multi-field")
-        print(f"📦 API payload: {api_payload}")
+        print(f"📦 API payload: {npt_api_payload}")
         
         try:
-            result = self._call_api(f"/api/rag-faiss/analyze-multi-field", "POST", api_payload)
+            result = self._call_api(f"/api/rag-faiss/analyze-multi-field", "POST", npt_api_payload)
+            result_recomendations = self._call_api(f"/risk-chat/{self.session_id}/analyze", "POST", {"data": payload})
             print(f"✅ API response received: {type(result)}")
             print(f"📄 Response status: {result.get('status', 'unknown')}")
             

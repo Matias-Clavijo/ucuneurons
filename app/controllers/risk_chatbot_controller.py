@@ -61,9 +61,26 @@ Recibirás los datos en un formato multimodal: una imagen y un texto que describ
     - `additional_info`: Cualquier otra información relevante.
 
 # FORMATO DE RESPUESTA OBLIGATORIO
-Tu única salida debe ser un markdown con: 
+Tu única salida debe ser un objeto JSON válido con la siguiente estructura. No incluyas `json` ni ````.
 
-consideraciones para el riesgo ambiental.
+{
+  "operators_risk_level": "LOW" | "MID" | "HIGH" | "CRITICAL",
+  "environment_risk_level": "LOW" | "MID" | "HIGH" | "CRITICAL",
+  "operators_risk_message": [
+    "String explicando el primer factor de riesgo para el operario.",
+    "String explicando el segundo factor de riesgo para el operario, posiblemente basado en la imagen."
+  ],
+  "environment_risk_message": [
+    "String explicando el primer factor de riesgo para el medio ambiente.",
+    "String explicando el segundo factor de riesgo para el medio ambiente, posiblemente basado en la imagen."
+  ],
+  "operator_requirements": [
+    "Guantes de nitrilo resistentes a químicos",
+    "Gafas de seguridad antisalpicaduras",
+    "Protección respiratoria con filtro para vapores orgánicos",
+    "Casco de seguridad"
+  ]
+}
 """
 
 @risk_chatbot_bp.route('/')
