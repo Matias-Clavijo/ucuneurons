@@ -76,7 +76,7 @@ def main():
         time.sleep(1)
         print("✅ Flask API iniciado correctamente")
         
-        # Iniciar Gradio (bloquea el hilo principal)
+        # Iniciar Gradio (bloquea el hilo principal)chat_json_response
         print("🔄 Iniciando interfaz Gradio...")
         run_gradio_interface(session_id=model_session_id)
         

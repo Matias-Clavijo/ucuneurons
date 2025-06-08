@@ -1,4 +1,5 @@
 import gradio as gr
+import pandas as pd
 import requests
 import json
 from typing import Dict, Any
@@ -8,7 +9,7 @@ from io import BytesIO
 class GradioInterface:
     """Vista de Gradio que se comunica con la API Flask"""
     
-    def __init__(self, api_base_url: str = "http://localhost:5000", session_id: str = None):
+    def __init__(self, api_base_url: str = "http://localhost:5001", session_id: str = None):
         self.api_base_url = api_base_url
         self.session_id = session_id
         self.interface = None
@@ -35,6 +36,9 @@ class GradioInterface:
         except Exception as e:
             return {"status": "error", "message": str(e)}
     
+    def list_to_message(self, list: list) -> str:
+        return '\n'.join(f"- {item}" for item in list)
+    
     def process_text_interface(self, chemicals, place, materials, frequency, environment, additional_info, process, image_pil) -> str:
         
         required_fields = {
@@ -55,32 +59,39 @@ class GradioInterface:
             "chemicals": chemicals,
             "place": place,
             "materials": materials,
-            "frequency": frequency,
+            "frequency_of_use": frequency,
             "environment": environment,
-            "additional_info": additional_info,
             "process": process,
+            "additional_info": additional_info,
         }
  
         if image_pil:
             buffered = BytesIO()
             image_pil.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-            payload['image_base64'] = img_str
+            payload['image'] = img_str
 
         print("Sending payload to API:", payload)
-        #result = self._call_api("/api/process", "POST", payload)
-        result = {"status": "success", "result": {"original": "Hello", "processed": "Hello", "length": 5, "word_count": 1, "timestamp": "2025-06-07T12:00:00Z"}}
+        result = self._call_api(f"/risk-chat/{self.session_id}/analyze", "POST", {"data": payload})
+
         if result.get("status") == "error":
             return f"❌ Error: {result.get('message', 'Error desconocido')}"
-        
-        data = result.get("result", {})
-        return f"""✅ **Texto procesado exitosamente**
 
-📝 **Original:** {data.get('original', '')}
-🔄 **Procesado:** {data.get('processed', '')}
-📏 **Longitud:** {data.get('length', 0)} caracteres
-📊 **Palabras:** {data.get('word_count', 0)}
-⏰ **Procesado en:** {data.get('timestamp', '')}"""
+        chat_result = result.get("chat_response", {})
+        # ntp_result = chat_result.get("npt_risk_data", {})
+        # return f"""
+        
+        #     ## Riesgo del operador (IN): {ntp_result.get("risk", "")}
+        #  \n ### Consideraciones para el operador: \n {self.list_to_message(chat_result.get("operators_risk_message", []))}
+        #  \n ### Requerimientos de protección: \n  {self.list_to_message(chat_result.get("operator_requirements", []))}
+        #  \n ## Riesgo estimado del ambiente: {chat_result.get("environment_risk_level", "")} \n
+        #  \n ### Consideraciones para el ambiente: \n  {self.list_to_message(chat_result.get("environment_risk_message", []))}
+
+        # \n\n\n
+
+        # Extra info : {ntp_result}
+        # """
+        return chat_result
           
     def create_interface(self) -> gr.Blocks:
         """Crear la interfaz de Gradio"""
@@ -101,6 +112,10 @@ class GradioInterface:
                         chemicals_input = gr.Textbox(
                             label="Chemicals",
                             placeholder="Write the chemicals that are involved (Ej: Pentanol)"
+                        )
+                        materials_input = gr.Textbox(
+                            label="Quantity",
+                            placeholder="Write the quantity of the materials that are involved (Ej: 100 mg/m3)"
                         )
                         place_input = gr.Textbox(
                             label="Place",
@@ -128,6 +143,7 @@ class GradioInterface:
                             placeholder="You can specify additional information that you think is important",
                             lines=4
                         )
+                        
                         process_btn = gr.Button("🔄 Process", variant="primary")
                     
                     with gr.Column():

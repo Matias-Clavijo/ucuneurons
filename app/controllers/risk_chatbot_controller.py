@@ -2,78 +2,69 @@ from flask import Blueprint, jsonify, request
 import uuid
 import base64
 import json
+
+from markdown_it.rules_inline import image
+
 from app.models.gemini_model import gemini_model
 from datetime import datetime
+
+from app.services.ent_function import calcular_riesgo_inhalacion_ntp937
 
 # Blueprint para el chatbot de evaluación de riesgos
 risk_chatbot_bp = Blueprint('risk_chatbot', __name__)
 
 # System instruction del experto en recopilación de datos
-RISK_EXPERT_PROMPT = """# ROL Y OBJETIVO
-Eres un "Asistente de Recopilación de Datos para Evaluación de Riesgos". Tu única misión es interactuar con un usuario para recopilar y estructurar la información INICIAL sobre una tarea industrial. Debes asegurarte de obtener todos los datos necesarios para que las siguientes etapas (consulta de documentos y cálculo de riesgo) puedan ejecutarse correctamente. Tu trabajo termina cuando tienes un perfil completo de la tarea.
+RISK_EXPERT_PROMPT = """
+# ROL Y OBJETIVO
+Eres un experto en evaluación de riesgos industriales y medioambientales con capacidad de análisis visual. Tu objetivo es analizar un conjunto de datos y una imagen sobre un proceso industrial para determinar la peligrosidad para los operarios y el medio ambiente. Tu respuesta debe ser únicamente un objeto JSON estructurado según el formato especificado, sin ningún texto, explicación o introducción adicional.
 
-# TU PROCESO MENTAL Y LÓGICA DE DIÁLOGO
-1.  **Analiza la Descripción Inicial:** El usuario te dará una primera descripción de la tarea. Analízala para identificar qué información ya está presente.
+# PROCESO DE ANÁLISIS
+Realizarás un análisis integral basado en toda la información proporcionada (texto e imagen).
 
-2.  **Verifica tu Checklist de "Datos Críticos":** Tu objetivo es rellenar esta lista. Para cada tarea, necesitas saber:
-    * **Químicos:** La lista completa de productos químicos involucrados.
-    * **Proceso:** Una descripción clara de la acción (mezcla, trasvase, limpieza, etc.).
-    * **Cantidad:** El volumen o masa aproximada del químico que se manipula por tarea o por día (ej: "20 litros", "100 kg"). *Justificación para el usuario: "Necesario para la 'Clase de Cantidad' de la evaluación."*
-    * **Frecuencia y Duración:** Cuántas veces y por cuánto tiempo se hace la tarea (ej: "una vez al día, durante 30 minutos"). *Justificación para el usuario: "Clave para determinar la 'Clase de Frecuencia'."*
-    * **Temperatura de Trabajo:** La temperatura aproximada a la que se encuentra el químico durante el proceso. *Justificación para el usuario: "Fundamental para evaluar la volatilidad del producto."*
-    * **Ubicación Geográfica:** El país donde se realiza la tarea. *Justificación para el usuario: "Para que el sistema consulte la legislación local correcta."*
-    * **Entorno Físico:** Si es interior o exterior, y las características de la ventilación (natural, forzada, inexistente). *Justificación para el usuario: "Ayuda a definir los controles y la dispersión."*
+## 1. Análisis de la Imagen del Entorno de Trabajo:
+Primero, si esta presente, analiza la imagen proporcionada para identificar pistas visuales de riesgo. Busca específicamente:
+- **EPP del Operario:** ¿Los trabajadores visibles usan casco, gafas, guantes, protección respiratoria? ¿El EPP parece adecuado o está ausente?
+- **Estado del Entorno:** ¿Está el área ordenada y limpia o hay desorden, derrames, objetos en el suelo que puedan causar tropiezos?
+- **Equipamiento de Seguridad:** ¿Se observan extintores, duchas de emergencia, lavaojos, sistemas de ventilación localizada (campanas de extracción)?
+- **Condición de los Materiales:** ¿Los contenedores, mangueras o bombas parecen en buen estado, o se ven desgastados, corroídos o con fugas?
+- **Señalización de Seguridad:** ¿Existen señales de advertencia de riesgos químicos, uso obligatorio de EPP, o rutas de evacuación?
 
-3.  **Análisis de Imágenes:**
-    * El usuario podra enviar fotos relevantes para la evaluación.
-    * Las fotos más útiles son:
-      - **Lugar de trabajo:** Naves, instalaciones, áreas donde se realiza la tarea
-      - **Equipamiento de operadores:** EPIs, equipos de protección, trabajadores
-      - **Equipos industriales:** Maquinaria, sistemas de transferencia, contenedores
-      - **Sistemas de seguridad:** Duchas de emergencia, extintores, señalización
-      - **Almacenamiento:** Áreas de almacén, contenedores de químicos
-      
-# REGLAS Y LIMITACIONES
--   **NO tienes conocimiento de FDS ni de leyes.** Si un usuario te pregunta "¿Este químico es peligroso?", tu respuesta debe ser: "No tengo acceso a esa información. Mi función es solo recopilar los datos de la tarea para que otro sistema pueda analizarla con los documentos pertinentes."
--   **NO calcules ningún riesgo.** No uses palabras como "bajo", "medio" o "alto".
--   Sé amable, profesional y conciso. No abrumes al usuario.
+## 2. Evaluación de Riesgo para Operarios:
+Analiza los siguientes factores, **integrando los hallazgos del análisis de la imagen**, para determinar el nivel de riesgo ("LOW", "MID", "HIGH", "CRITICAL"):
+- **Toxicidad y Peligrosidad de los Químicos:** ¿Son los químicos inherentemente peligrosos para la salud humana?
+- **Naturaleza del Proceso:** ¿El proceso implica riesgo de salpicaduras, inhalación de vapores, contacto dérmico o esfuerzo físico?
+- **Frecuencia y Duración:** Una alta frecuencia aumenta la exposición acumulada.
+- **Entorno de Trabajo:** ¿Un espacio cerrado concentra vapores? ¿La falta de orden o de equipos de seguridad (visto en la imagen) aumenta el riesgo?
+- **Materiales y Equipos:** ¿Los materiales son adecuados? ¿Su condición visible en la imagen presenta un riesgo?
 
-# FORMATO DE SALIDA FINAL
-Una vez que hayas recopilado TODOS los datos críticos de tu checklist, y solo entonces, tu única y final respuesta debe ser un único objeto JSON que estructure toda la información. 
+## 3. Evaluación de Riesgo para el Medio Ambiente:
+Analiza los siguientes factores, **integrando los hallazgos del análisis de la imagen**, para determinar el nivel de riesgo ("LOW", "MID", "HIGH", "CRITICAL"):
+- **Ecotoxicidad de los Químicos:** ¿Son los químicos dañinos para la vida acuática, el suelo o el aire?
+- **Potencial de Fuga o Derrame:** ¿El proceso o el estado del equipo (visto en la imagen) sugiere un alto riesgo de liberación al ambiente? ¿Existen sistemas de contención secundaria visibles?
+- **Ubicación Geográfica (`place`):** ¿La cercanía a zonas sensibles (ríos, etc.) agrava un posible derrame?
+- **Entorno Físico (`environment`):** Un proceso "Outdoor" tiene una ruta de liberación directa. Un proceso "Indoor" sin contención adecuada (visto en la imagen) puede llevar a una liberación a través de drenajes.
 
-**IMPORTANTE:** Si el usuario ha enviado fotos durante la conversación, DEBES incluir las descripciones de las imágenes analizadas en el campo "descripciones_fotos". No añadas ningún texto antes o después del JSON.
+## 4. Determinación de Requisitos para el Operario (EPP):
+Basado en el análisis completo (químicos, proceso, materiales e imagen), genera una lista de los elementos de protección personal **obligatorios** para realizar la tarea de forma segura. Infiere los requisitos estándar según las buenas prácticas de seguridad industrial para los riesgos identificados.
+- **Ejemplos:** Para químicos volátiles, sugiere "Protección respiratoria con filtro para vapores orgánicos". Para riesgo de salpicaduras, "Gafas de seguridad antisalpicaduras y guantes de nitrilo". Para riesgo de caída de objetos, "Casco de seguridad".
 
-**Ejemplo de Salida Final:**
-```json
-{
-  "status": "COMPLETO",
-  "datos_tarea": {
-    "quimicos_involucrados": ["Ácido clorhídrico 37%"],
-    "descripcion_proceso": "Trasladar desde un tambor de 200L a un reactor de mezcla mediante una manguera y una bomba neumática.",
-    "parametros_operativos": {
-      "cantidad_por_tarea_kg": 150,
-      "duracion_por_tarea_min": 20,
-      "temperatura_proceso_c": 25,
-      "frecuencia_de_uso": "2 veces al día"
-    },
-    "contexto_fisico": {
-      "ubicacion_pais": "España",
-      "tipo_entorno": "Interior",
-      "descripcion_ventilacion": "Nave grande con ventilación general, sin extracción localizada en el punto de trabajo."
-    },
-    "descripciones_fotos": [
-      {
-        "tipo": "lugar_trabajo",
-        "descripcion": "Nave industrial de aproximadamente 200m², con techos altos, ventilación general mediante extractores en el techo. Se observan contenedores metálicos y equipos de transferencia."
-      },
-      {
-        "tipo": "equipamiento_operadores", 
-        "descripcion": "Operadores con guantes de nitrilo, gafas de seguridad y mascarillas. Disponibles duchas de emergencia y lavaojos en las proximidades."
-      }
-    ]
-  }
-}
-```"""
+# DATOS DE ENTRADA
+Recibirás los datos en un formato multimodal: una imagen y un texto que describe la tarea a analizar.
+- **Imagen:** Una fotografía del entorno de trabajo.
+- **Texto:**
+    - `chemicals`: Lista de productos químicos involucrados.
+    - `place`: Ubicación de la planta o proceso.
+    - `materials`: Equipos o materiales utilizados.
+    - `frequency_of_use`: Con qué frecuencia se realiza la tarea.
+    - `environment`: Si el proceso es en interiores o exteriores.
+    - `process`: Descripción de la tarea que realiza el operario.
+    - `additional_info`: Cualquier otra información relevante.
+
+# FORMATO DE RESPUESTA OBLIGATORIO
+Tu única salida debe ser un markdown con: 
+
+consideraciones para el riesgo ambiental.
+"""
 
 @risk_chatbot_bp.route('/')
 def risk_chatbot_home():
@@ -330,15 +321,6 @@ Esta información visual será incluida en el reporte final de evaluación de ri
 
 @risk_chatbot_bp.route('/<session_id>/submit-form', methods=['POST'])
 def submit_form_with_image(session_id):
-    """
-    ENDPOINT UNIFICADO: Enviar campos del formulario + imagen al mismo tiempo
-    
-    Ideal para frontends que quieren enviar todo junto de una vez.
-    Acepta:
-    - message: Texto del usuario (campos del formulario)
-    - image: Imagen en base64 (opcional)
-    - context: Contexto adicional para la imagen (opcional)
-    """
     try:
         data = request.get_json()
         if not data:
@@ -347,12 +329,10 @@ def submit_form_with_image(session_id):
                 "message": "No data provided"
             }), 400
         
-        message = data.get("message", "")
+        message = data.get("data", {})
         image_base64 = data.get("image")
-        image_context = data.get("context", "")
         
-        # Validar que al menos hay mensaje o imagen
-        if not message and not image_base64:
+        if not message:
             return jsonify({
                 "status": "error",
                 "message": "Se requiere al menos un mensaje o una imagen"
@@ -360,7 +340,6 @@ def submit_form_with_image(session_id):
         
         results = []
         
-        # PASO 1: Procesar MENSAJE (si existe)
         if message.strip():
             try:
                 chat_result = gemini_model.send_chat_message(session_id, message)
@@ -375,8 +354,7 @@ def submit_form_with_image(session_id):
                 results.append({
                     "type": "message",
                     "status": "success",
-                    "response": chat_result["response"],
-                    "is_complete": chat_result.get("is_complete", False)
+                    "response": chat_result["response"]
                 })
                 
             except Exception as e:
@@ -514,7 +492,7 @@ Esta información visual será incluida en el reporte final de evaluación de ri
                     "status": "error",
                     "message": f"Error procesando imagen: {str(e)}"
                 }), 500
-        
+
         # RESPUESTA CONSOLIDADA
         # Determinar si la evaluación está completa (buscar en todas las respuestas)
         is_complete = False
@@ -629,25 +607,90 @@ def get_risk_history(session_id):
             "message": str(e)
         }), 500
 
-@risk_chatbot_bp.route('/<session_id>', methods=['DELETE'])
-def delete_risk_session(session_id):
-    """Eliminar sesión de evaluación de riesgos"""
+
+@risk_chatbot_bp.route('/<session_id>/analyze', methods=['POST'])
+def analyze_v1(session_id):
     try:
-        result = gemini_model.delete_chat_session(session_id)
+        data = request.get_json()
+        print(data)
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "No data provided"
+            }), 400
+
+
+        message = data.get("data", {})
+        image_base64 = message.get("image")
+
+        if not message:
+            return jsonify({
+                "status": "error",
+                "message": "Se requiere al menos un mensaje o una imagen"
+            }), 400
         
-        if result["status"] == "error":
-            return jsonify(result), 404
-        
-        return jsonify({
-            "status": "success",
-            "message": f"Sesión de evaluación de riesgos '{session_id}' eliminada",
-            "timestamp": result["timestamp"]
-        })
-        
+
+        analysis_prompt = f"""
+---
+AQUÍ COMIENZA LA INFORMACIÓN PARA ANALIZAR:
+
+[IMAGEN PROPORCIONADA en BASE64] = {image_base64}
+
+- **chemicals:** {message.get("chemicals", "")}
+- **place:** {message.get("place", "")}
+- **materials:** {message.get("materials", "")}
+- **frequency_of_use:** {message.get("frequency_of_use", "")}
+- **environment:** {message.get("environment", "")}
+- **process:** {message.get("process", "")}
+- **additional_info:** {message.get("additional_info", "")}
+        """
+
+
+        try:
+            chat_result = gemini_model.send_chat_message(session_id, analysis_prompt)
+
+            if chat_result["status"] == "error":
+                return jsonify({
+                    "status": "error",
+                    "message": "Error al procesar mensaje",
+                    "chat_response": chat_result["message"].replace("```json ", "")
+                }), 500
+
+            chat_json_response = chat_result["response"].replace("```json", "").replace("```", "")
+
+            result_ntp = calcular_riesgo_inhalacion_ntp937(
+                # Datos de la FDS
+                frases_h=['H410', 'H401', 'H331', 'H315'],
+                vla_mg_m3=20,
+                es_solido=False,
+                punto_ebullicion_C=189,
+                # Datos del Escenario de Trabajo
+                cantidad_g_dia=1740,
+                clase_frecuencia=4,
+                temperatura_trabajo_C=25,
+                clase_procedimiento=3,        # 3: Abierto
+                clase_proteccion_colectiva=4  # 4: Ventilación general
+            )
+
+            json_result = json.loads(chat_json_response)
+
+            json_result["npt_risk_data"] = result_ntp
+
+            return jsonify({
+                "status": "success",
+                "chat_response": chat_json_response
+            })
+
+        except Exception as e:
+            return jsonify({
+                "status": "error",
+                "message": f"Error procesando mensaje: {str(e)}"
+            }), 500
+
     except Exception as e:
         return jsonify({
             "status": "error",
-            "message": str(e)
+            "message": f"Error procesando imagen: {str(e)}"
         }), 500
 
 # Manejadores de errores específicos
