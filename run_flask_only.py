@@ -22,6 +22,7 @@ def main():
     flask_app = create_app()
     
     try:
+        print(flask_app.url_map)
         flask_app.run(
             host=Config.API_HOST,
             port=Config.API_PORT,

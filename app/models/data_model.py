@@ -45,7 +45,7 @@ class DataModel:
         self._add_to_history("counter_reset", {"old_value": old_value})
         return 0
     
-    def process_text(self, text: str) -> Dict[str, Any]:
+    def process_text(self, text: str, image_base64: str = None) -> Dict[str, Any]:
         """Procesar texto y devolver resultado"""
         if not text:
             return {"error": "Texto vacío"}
@@ -56,7 +56,8 @@ class DataModel:
             "processed": text.upper(),
             "length": len(text),
             "word_count": len(text.split()),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "image_received": image_base64 is not None
         }
         
         self._add_to_history("text_processed", processed)

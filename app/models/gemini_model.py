@@ -24,7 +24,7 @@ class GeminiModel:
         else:
             self.client = genai.Client(api_key=self.api_key)
         
-        self._chat_sessions = {}  # Almacenar sesiones de chat
+        self.chat_sessions = {}  # Almacenar sesiones de chat
     
     def generate_text(self, prompt: str, system_instruction: Optional[str] = None) -> Dict[str, Any]:
         """Generar texto usando Gemini"""
@@ -118,7 +118,7 @@ class GeminiModel:
                 config=config
             )
             
-            self._chat_sessions[session_id] = {
+            self.chat_sessions[session_id] = {
                 "chat": chat,
                 "created_at": datetime.now().isoformat(),
                 "system_instruction": system_instruction
@@ -140,7 +140,7 @@ class GeminiModel:
     
     def send_chat_message(self, session_id: str, message: str) -> Dict[str, Any]:
         """Enviar mensaje en una sesión de chat"""
-        if session_id not in self._chat_sessions:
+        if session_id not in self.chat_sessions:
             return {
                 "status": "error",
                 "message": f"Sesión '{session_id}' no encontrada. Crear sesión primero.",
@@ -148,7 +148,7 @@ class GeminiModel:
             }
         
         try:
-            chat = self._chat_sessions[session_id]["chat"]
+            chat = self.chat_sessions[session_id]["chat"]
             response = chat.send_message(message)
             
             return {
@@ -170,12 +170,12 @@ class GeminiModel:
     
     def send_chat_message_stream(self, session_id: str, message: str) -> Iterator[str]:
         """Enviar mensaje con streaming en chat"""
-        if session_id not in self._chat_sessions:
+        if session_id not in self.chat_sessions:
             yield f"Error: Sesión '{session_id}' no encontrada"
             return
         
         try:
-            chat = self._chat_sessions[session_id]["chat"]
+            chat = self.chat_sessions[session_id]["chat"]
             response = chat.send_message_stream(message)
             
             for chunk in response:
@@ -187,7 +187,7 @@ class GeminiModel:
     
     def get_chat_history(self, session_id: str) -> Dict[str, Any]:
         """Obtener historial de chat"""
-        if session_id not in self._chat_sessions:
+        if session_id not in self.chat_sessions:
             return {
                 "status": "error",
                 "message": f"Sesión '{session_id}' no encontrada",
@@ -195,7 +195,7 @@ class GeminiModel:
             }
         
         try:
-            chat = self._chat_sessions[session_id]["chat"]
+            chat = self.chat_sessions[session_id]["chat"]
             history = []
             
             for message in chat.get_history():
@@ -250,8 +250,8 @@ class GeminiModel:
     
     def delete_chat_session(self, session_id: str) -> Dict[str, Any]:
         """Eliminar sesión de chat"""
-        if session_id in self._chat_sessions:
-            del self._chat_sessions[session_id]
+        if session_id in self.chat_sessions:
+            del self.chat_sessions[session_id]
             return {
                 "status": "success",
                 "message": f"Sesión '{session_id}' eliminada",
@@ -267,7 +267,7 @@ class GeminiModel:
     def list_chat_sessions(self) -> Dict[str, Any]:
         """Listar todas las sesiones de chat activas"""
         sessions_info = []
-        for session_id, session_data in self._chat_sessions.items():
+        for session_id, session_data in self.chat_sessions.items():
             sessions_info.append({
                 "session_id": session_id,
                 "created_at": session_data["created_at"],
@@ -289,7 +289,7 @@ class GeminiModel:
             "temperature": self.temperature,
             "api_configured": bool(self.api_key),
             "client_active": bool(self.client),
-            "active_sessions": len(self._chat_sessions)
+            "active_sessions": len(self.chat_sessions)
         }
 
     # ======================
@@ -378,7 +378,7 @@ class GeminiModel:
     
     def chat_with_context(self, session_id: str, message: str, context: str, temperature: float = 0.1) -> Dict[str, Any]:
         """Chat con contexto específico (RAG conversacional)"""
-        if session_id not in self._chat_sessions:
+        if session_id not in self.chat_sessions:
             # Crear sesión si no existe
             system_instruction = f"""Eres un asistente especializado. 
             Utiliza el siguiente contexto para responder consultas de forma precisa y útil:
@@ -393,7 +393,7 @@ class GeminiModel:
                 return create_result
         
         try:
-            chat = self._chat_sessions[session_id]["chat"]
+            chat = self.chat_sessions[session_id]["chat"]
             response = chat.send_message(message)
             
             return {

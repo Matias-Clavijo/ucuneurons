@@ -10,6 +10,7 @@ import os
 from app import create_app
 from app.views.gradio_interface import GradioInterface
 from app.config.config import Config
+from app.controllers.risk_chatbot_controller import start_risk_assessment
 
 def run_flask_app():
     """Ejecutar la aplicación Flask en un hilo separado"""
@@ -21,12 +22,12 @@ def run_flask_app():
         use_reloader=False  # Evitar conflictos con threading
     )
 
-def run_gradio_interface():
+def run_gradio_interface(session_id: str = None):
     """Ejecutar la interfaz Gradio"""
     # Esperar un momento a que Flask inicie
     time.sleep(2)
     
-    gradio_interface = GradioInterface()
+    gradio_interface = GradioInterface(session_id=session_id)
     gradio_interface.create_interface()
     
     print(f"🎨 Lanzando interfaz Gradio en http://{Config.GRADIO_HOST}:{Config.GRADIO_PORT}")
@@ -53,6 +54,18 @@ def main():
     print(f"🔧 Debug Mode: {Config.DEBUG}")
     print("=" * 60)
     
+    # Iniciar el risk assessment
+    print("🤖 Iniciando Risk Assessment Chatbot...")
+    model_session = start_risk_assessment()
+    print(model_session)
+    if model_session.get("status") == "error":
+        print(f"❌ Error al iniciar el Risk Assessment Chatbot: {model_session.get('message')}")
+    else:
+        print(f"✅ Risk Assessment Chatbot iniciado correctamente con sesión: {model_session.get('session_id')}")
+
+    model_session_id = model_session.get("session_id")
+    print("✅ Risk Assessment Chatbot iniciado.")
+    
     try:
         # Iniciar Flask en un hilo separado
         print("🔄 Iniciando Flask API...")
@@ -63,9 +76,9 @@ def main():
         time.sleep(1)
         print("✅ Flask API iniciado correctamente")
         
-        # Iniciar Gradio (bloquea el hilo principal)
+        # Iniciar Gradio (bloquea el hilo principal)chat_json_response
         print("🔄 Iniciando interfaz Gradio...")
-        run_gradio_interface()
+        run_gradio_interface(session_id=model_session_id)
         
     except KeyboardInterrupt:
         print("\n🛑 Aplicación detenida por el usuario")
