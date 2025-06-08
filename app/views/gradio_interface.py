@@ -8,8 +8,9 @@ from io import BytesIO
 class GradioInterface:
     """Vista de Gradio que se comunica con la API Flask"""
     
-    def __init__(self, api_base_url: str = "http://localhost:5000"):
+    def __init__(self, api_base_url: str = "http://localhost:5000", session_id: str = None):
         self.api_base_url = api_base_url
+        self.session_id = session_id
         self.interface = None
     
     def _call_api(self, endpoint: str, method: str = "GET", data: Dict[str, Any] = None) -> Dict[str, Any]:

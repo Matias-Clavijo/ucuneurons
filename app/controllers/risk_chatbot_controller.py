@@ -24,22 +24,14 @@ Eres un "Asistente de Recopilación de Datos para Evaluación de Riesgos". Tu ú
     * **Entorno Físico:** Si es interior o exterior, y las características de la ventilación (natural, forzada, inexistente). *Justificación para el usuario: "Ayuda a definir los controles y la dispersión."*
 
 3.  **Análisis de Imágenes:**
-    * SIEMPRE invita al usuario a enviar fotos relevantes para la evaluación.
+    * El usuario podra enviar fotos relevantes para la evaluación.
     * Las fotos más útiles son:
       - **Lugar de trabajo:** Naves, instalaciones, áreas donde se realiza la tarea
       - **Equipamiento de operadores:** EPIs, equipos de protección, trabajadores
       - **Equipos industriales:** Maquinaria, sistemas de transferencia, contenedores
       - **Sistemas de seguridad:** Duchas de emergencia, extintores, señalización
       - **Almacenamiento:** Áreas de almacén, contenedores de químicos
-    * Después del análisis de imagen, continúa recopilando cualquier dato faltante.
-    * Recuerda al usuario que las descripciones de las fotos serán incluidas en el reporte final.
-
-4.  **Lógica de Repregunta:**
-    * Si la descripción inicial del usuario no incluye todos estos datos, tu deber es repreguntar de forma amigable y secuencial, **una pregunta a la vez**.
-    * Empieza por la información más obvia que falte. Por ejemplo, si el usuario dice "voy a mover ácido", pero no dice cuánto, tu primera pregunta debe ser sobre la cantidad.
-    * Utiliza la justificación para que el usuario entienda por qué le preguntas. Ejemplo: "Entendido. Para poder evaluar correctamente la exposición, ¿podrías indicarme la cantidad aproximada de producto que se usa en esta tarea?"
-    * Si el usuario puede proporcionar fotos del lugar de trabajo, invítale a enviarlas: "Si tienes fotos del lugar de trabajo, equipos o instalaciones, puedes enviarlas para una evaluación más completa."
-
+      
 # REGLAS Y LIMITACIONES
 -   **NO tienes conocimiento de FDS ni de leyes.** Si un usuario te pregunta "¿Este químico es peligroso?", tu respuesta debe ser: "No tengo acceso a esa información. Mi función es solo recopilar los datos de la tarea para que otro sistema pueda analizarla con los documentos pertinentes."
 -   **NO calcules ningún riesgo.** No uses palabras como "bajo", "medio" o "alto".
@@ -100,41 +92,36 @@ def risk_chatbot_home():
         "objetivo": "Recopilar datos completos sobre tareas industriales para evaluación de riesgos"
     })
 
-@risk_chatbot_bp.route('/start', methods=['POST'])
 def start_risk_assessment():
     """Iniciar nueva sesión de evaluación de riesgos"""
     try:
-        data = request.get_json() or {}
-        
         # Generar ID único para la sesión
-        session_id = data.get("session_id", f"risk-{uuid.uuid4().hex[:8]}")
+        session_id = f"risk-{uuid.uuid4().hex[:8]}"
         
-        # Crear sesión con el prompt especializado
         result = gemini_model.create_chat_session(session_id, RISK_EXPERT_PROMPT)
         
         if result["status"] == "error":
-            return jsonify(result), 500
-        
-        # Enviar mensaje de bienvenida automático
+            return {"result": result}
+
         welcome_result = gemini_model.send_chat_message(
             session_id, 
             "Hola, soy tu asistente para recopilar datos de evaluación de riesgos. Para comenzar, describe brevemente la tarea industrial que quieres evaluar."
         )
         
-        return jsonify({
+        return {
             "status": "success",
             "session_id": session_id,
             "message": "Sesión de evaluación de riesgos iniciada",
             "welcome_message": welcome_result.get("response", ""),
             "tipo": "risk_assessment",
             "timestamp": result["timestamp"]
-        })
+        }
         
     except Exception as e:
-        return jsonify({
+        return {
             "status": "error",
             "message": str(e)
-        }), 500
+        }
 
 @risk_chatbot_bp.route('/<session_id>/message', methods=['POST'])
 def send_risk_message(session_id):
@@ -167,7 +154,6 @@ def send_risk_message(session_id):
         try:
             import json
             if response_text.strip().startswith("{") and response_text.strip().endswith("}"):
-                # Intentar parsear el JSON para verificar que es válido
                 parsed_json = json.loads(response_text)
                 if parsed_json.get("status") == "COMPLETO":
                     is_complete = True

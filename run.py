@@ -57,6 +57,7 @@ def main():
     # Iniciar el risk assessment
     print("🤖 Iniciando Risk Assessment Chatbot...")
     model_session = start_risk_assessment()
+    print(model_session)
     if model_session.get("status") == "error":
         print(f"❌ Error al iniciar el Risk Assessment Chatbot: {model_session.get('message')}")
     else:
