@@ -22,9 +22,9 @@ class GradioInterface:
             url = f"{self.api_base_url}{endpoint}"
 
             if method == "GET":
-                response = requests.get(url)
+                response = requests.get(url, timeout=60)  # 60 segundos timeout
             elif method == "POST":
-                response = requests.post(url, json=data)
+                response = requests.post(url, json=data, timeout=60)  # 60 segundos timeout
             else:
                 return {"status": "error", "message": f"Método {method} no soportado"}
 
@@ -35,8 +35,18 @@ class GradioInterface:
                 "status": "error",
                 "message": f"No se puede conectar a la API Flask. Verifica que esté corriendo en {self.api_base_url}.",
             }
+        except requests.exceptions.Timeout:
+            return {
+                "status": "error", 
+                "message": f"Timeout: La API tardó más de 60 segundos en responder. El análisis puede estar tardando demasiado."
+            }
+        except requests.exceptions.RequestException as e:
+            return {
+                "status": "error",
+                "message": f"Error de request: {str(e)}"
+            }
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return {"status": "error", "message": f"Error inesperado: {str(e)}"}
     
     def list_to_message(self, list: list) -> str:
         return '\n'.join(f"- {item}" for item in list)
@@ -74,26 +84,65 @@ class GradioInterface:
             payload['image'] = img_str
 
         print("Sending payload to API:", payload)
-        result = self._call_api(f"/risk-chat/{self.session_id}/analyze", "POST", {"data": payload})
+        
+        # Preparar datos para el endpoint analyze-multi-field
+        api_payload = {
+            "chemical_name": chemicals,
+            "temperature": "No proporcionada",  # Puedes agregar un campo para esto
+            "requests_per_field": 3,
+            "fields": ["procedimiento_trabajo", "proteccion_colectiva", "factor_vla", "volatilidad"]
+        }
+        
+        print(f"🚀 Calling API endpoint: /api/rag-faiss/analyze-multi-field")
+        print(f"📦 API payload: {api_payload}")
+        
+        try:
+            result = self._call_api(f"/api/rag-faiss/analyze-multi-field", "POST", api_payload)
+            print(f"✅ API response received: {type(result)}")
+            print(f"📄 Response status: {result.get('status', 'unknown')}")
+            
+            # Si hay error, mostrar el mensaje detallado
+            if result.get('status') == 'error':
+                error_msg = result.get('message', 'Error desconocido')
+                print(f"❌ API Error: {error_msg}")
+                print(f"🔍 Full API response: {result}")
+            
+        except Exception as e:
+            print(f"❌ Error calling API: {str(e)}")
+            return f"❌ **Error llamando a la API:** {str(e)}"
 
-        if result.get("status") == "error":
-            return f"❌ Error: {result.get('message', 'Error desconocido')}"
-
-        chat_result = result.get("chat_response", {})
-        # ntp_result = chat_result.get("npt_risk_data", {})
-        # return f"""
-
-        #     ## Riesgo del operador (IN): {ntp_result.get("risk", "")}
-        #  \n ### Consideraciones para el operador: \n {self.list_to_message(chat_result.get("operators_risk_message", []))}
-        #  \n ### Requerimientos de protección: \n  {self.list_to_message(chat_result.get("operator_requirements", []))}
-        #  \n ## Riesgo estimado del ambiente: {chat_result.get("environment_risk_level", "")} \n
-        #  \n ### Consideraciones para el ambiente: \n  {self.list_to_message(chat_result.get("environment_risk_message", []))}
-
-        # \n\n\n
-
-        # Extra info : {ntp_result}
-        # """
-        return chat_result
+        # Siempre convertir el resultado a string para evitar errores de Gradio
+        try:
+            if result.get("status") == "error":
+                return f"❌ **Error:** {result.get('message', 'Error desconocido')}"
+            
+            # Extraer y formatear los resultados
+            if result.get("status") == "success":
+                results = result.get("results", {})
+                summary = result.get("processing_summary", {})
+                
+                # Formatear resultados por campo
+                formatted_output = "# 🧪 **Análisis NTP 937 Completado**\n\n"
+                
+                for field_name, field_data in results.items():
+                    formatted_output += f"## 📋 **{field_name.replace('_', ' ').title()}**\n"
+                    formatted_output += f"- **Requests realizados:** {field_data.get('total_requests', 0)}\n"
+                    formatted_output += f"- **Confianza promedio:** {field_data.get('summary', {}).get('average_confidence', 0):.2f}\n"
+                    formatted_output += f"- **Respuesta más detallada:** {field_data.get('summary', {}).get('most_detailed_answer', 'N/A')[:200]}...\n\n"
+                
+                formatted_output += f"## 📊 **Resumen General**\n"
+                formatted_output += f"- **Total campos analizados:** {summary.get('total_fields', 0)}\n"
+                formatted_output += f"- **Total requests realizados:** {summary.get('total_requests_made', 0)}\n"
+                formatted_output += f"- **Confianza general:** {summary.get('average_confidence_overall', 0):.2f}\n\n"
+                
+                formatted_output += f"<details>\n<summary>📄 **Ver JSON completo**</summary>\n\n```json\n{json.dumps(result, indent=2, ensure_ascii=False)}\n```\n</details>"
+                
+                return formatted_output
+            else:
+                return f"⚠️ **Respuesta inesperada:**\n```json\n{json.dumps(result, indent=2, ensure_ascii=False)}\n```"
+                
+        except Exception as e:
+            return f"❌ **Error procesando respuesta:** {str(e)}\n\n**Respuesta raw:**\n```json\n{json.dumps(result, indent=2, ensure_ascii=False)}\n```"
 
     def create_interface(self) -> gr.Blocks:
         """Crear la interfaz de Gradio"""

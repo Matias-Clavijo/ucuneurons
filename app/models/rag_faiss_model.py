@@ -320,6 +320,7 @@ class RAGFAISSModel:
                     "message": "No hay documentos procesados. Por favor, sube y procesa archivos primero.",
                     "answer": "",
                     "sources": [],
+                    "confidence": 0,
                 }
 
             # Buscar documentos relevantes
@@ -331,6 +332,7 @@ class RAGFAISSModel:
                     "message": "No se encontraron documentos relevantes para la consulta.",
                     "answer": "",
                     "sources": [],
+                    "confidence": 0,
                 }
 
             # Obtener cadena conversacional
@@ -341,6 +343,21 @@ class RAGFAISSModel:
                 {"input_documents": docs, "question": question},
                 return_only_outputs=True,
             )
+
+            # Extraer respuesta y calcular confidence
+            answer_text = response["output_text"]
+            
+            # Calcular confidence basado en:
+            # - Longitud de la respuesta (más larga = más detallada = mayor confidence)
+            # - Número de documentos encontrados (más contexto = mayor confidence)
+            # - Si la respuesta no está vacía
+            if answer_text and len(answer_text.strip()) > 0:
+                base_confidence = min(70, len(answer_text) / 5)  # Máximo 70 por longitud
+                context_bonus = min(20, len(docs) * 5)  # Máximo 20 por contexto
+                completion_bonus = 10  # Bonus por completar exitosamente
+                confidence = min(100, base_confidence + context_bonus + completion_bonus)
+            else:
+                confidence = 0
 
             # Extraer fuentes
             sources = []
@@ -357,13 +374,14 @@ class RAGFAISSModel:
             result = {
                 "status": "success",
                 "question": question,
-                "answer": response["output_text"],
+                "answer": answer_text,
                 "sources": sources,
                 "context_chunks": len(docs),
+                "confidence": round(confidence, 2),
                 "timestamp": datetime.now().isoformat(),
             }
 
-            logger.info(f"Pregunta respondida exitosamente")
+            logger.info(f"Pregunta respondida exitosamente - Confidence: {confidence:.2f}%")
             return result
 
         except Exception as e:
@@ -373,6 +391,7 @@ class RAGFAISSModel:
                 "message": f"Error procesando la consulta: {str(e)}",
                 "answer": "",
                 "sources": [],
+                "confidence": 0,
             }
 
     def get_stats(self) -> Dict[str, Any]:
