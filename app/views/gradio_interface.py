@@ -51,7 +51,7 @@ class GradioInterface:
     def list_to_message(self, list: list) -> str:
         return '\n'.join(f"- {item}" for item in list)
 
-    def process_text_interface(self, chemicals, place, materials, frequency, environment, additional_info, process, image_pil) -> str:
+    def process_text_interface(self, chemicals, place, quentity_input, materials, frequency, environment, additional_info, process, image_pil) -> str:
 
         required_fields = {
             "Chemicals": chemicals,
@@ -97,16 +97,9 @@ class GradioInterface:
         print(f"📦 API payload: {npt_api_payload}")
         
         try:
-            result = self._call_api(f"/api/rag-faiss/analyze-multi-field", "POST", npt_api_payload)
             result_recomendations = self._call_api(f"/risk-chat/{self.session_id}/analyze", "POST", {"data": payload})
-            print(f"✅ API response received: {type(result)}")
-            print(f"📄 Response status: {result.get('status', 'unknown')}")
-            
-            # Si hay error, mostrar el mensaje detallado
-            if result.get('status') == 'error':
-                error_msg = result.get('message', 'Error desconocido')
-                print(f"❌ API Error: {error_msg}")
-                print(f"🔍 Full API response: {result}")
+            result_recomendations = result_recomendations.get("chat_response", {})
+            print(f"✅ API response received: {result_recomendations}")
             
         except Exception as e:
             print(f"❌ Error calling API: {str(e)}")
@@ -114,34 +107,12 @@ class GradioInterface:
 
         # Siempre convertir el resultado a string para evitar errores de Gradio
         try:
-            if result.get("status") == "error":
-                return f"❌ **Error:** {result.get('message', 'Error desconocido')}"
             
-            # Extraer y formatear los resultados
-            if result.get("status") == "success":
-                results = result.get("results", {})
-                summary = result.get("processing_summary", {})
-                
-                # Formatear resultados por campo
-                formatted_output = "# 🧪 **Análisis NTP 937 Completado**\n\n"
-                
-                for field_name, field_data in results.items():
-                    formatted_output += f"## 📋 **{field_name.replace('_', ' ').title()}**\n"
-                    formatted_output += f"- **Requests realizados:** {field_data.get('total_requests', 0)}\n"
-                    formatted_output += f"- **Confianza promedio:** {field_data.get('summary', {}).get('average_confidence', 0):.2f}\n"
-                    formatted_output += f"- **Respuesta más detallada:** {field_data.get('summary', {}).get('most_detailed_answer', 'N/A')[:200]}...\n\n"
-                
-                formatted_output += f"## 📊 **Resumen General**\n"
-                formatted_output += f"- **Total campos analizados:** {summary.get('total_fields', 0)}\n"
-                formatted_output += f"- **Total requests realizados:** {summary.get('total_requests_made', 0)}\n"
-                formatted_output += f"- **Confianza general:** {summary.get('average_confidence_overall', 0):.2f}\n\n"
-                
-                formatted_output += f"<details>\n<summary>📄 **Ver JSON completo**</summary>\n\n```json\n{json.dumps(result, indent=2, ensure_ascii=False)}\n```\n</details>"
-                
-                return formatted_output
-            else:
-                return f"⚠️ **Respuesta inesperada:**\n```json\n{json.dumps(result, indent=2, ensure_ascii=False)}\n```"
-                
+            return f"""
+              ## Riesgo estimado calculo NTP: Altoss
+        #  \n ### Consideraciones para el operador: \n {self.list_to_message(result_recomendations.get("operators_risk_message", []))}
+        #  \n ### Requerimientos de protección: \n  {self.list_to_message(result_recomendations.get("operator_requirements", []))}
+        #  \n ### Consideraciones para el ambiente: \n  {self.list_to_message(result_recomendations.get("environment_risk_message", []))}"""
         except Exception as e:
             return f"❌ **Error procesando respuesta:** {str(e)}\n\n**Respuesta raw:**\n```json\n{json.dumps(result, indent=2, ensure_ascii=False)}\n```"
 
@@ -165,7 +136,7 @@ class GradioInterface:
                             label="Chemicals",
                             placeholder="Write the chemicals that are involved (Ej: Pentanol)"
                         )
-                        materials_input = gr.Textbox(
+                        quentity_input = gr.Textbox(
                             label="Quantity",
                             placeholder="Write the quantity of the materials that are involved (Ej: 100 mg/m3)"
                         )
@@ -177,9 +148,12 @@ class GradioInterface:
                             label="Materials",
                             placeholder="Write the materials that are involved (Ej: Bomb)"
                         )
-                        frequency_of_use_input = gr.Textbox(
-                            label="Frequency of use",
-                            placeholder="Specify the frequency in which the operator repeats the process (Ej: 10 times a day)"
+                        gr.Image(value="app/image/image.jpeg", interactive=False, label="Tabla de frecuencia de uso", width=400, height=300)
+                        frequency_of_use_input = gr.Slider(
+                            minimum=0,
+                            maximum=4,
+                            step=1,            
+                            label="Class of frequency of use"
                         )
                         environment_input = gr.Textbox(
                             label="Environment",
@@ -210,6 +184,7 @@ class GradioInterface:
                     inputs=[
                         chemicals_input,
                         place_input,
+                        quentity_input,
                         materials_input,
                         frequency_of_use_input,
                         environment_input,

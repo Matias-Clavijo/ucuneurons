@@ -661,7 +661,7 @@ AQUÍ COMIENZA LA INFORMACIÓN PARA ANALIZAR:
 - **process:** {message.get("process", "")}
 - **additional_info:** {message.get("additional_info", "")}
         """
-
+        print(analysis_prompt)
 
         try:
             chat_result = gemini_model.send_chat_message(session_id, analysis_prompt)
@@ -675,27 +675,11 @@ AQUÍ COMIENZA LA INFORMACIÓN PARA ANALIZAR:
 
             chat_json_response = chat_result["response"].replace("```json", "").replace("```", "")
 
-            result_ntp = calcular_riesgo_inhalacion_ntp937(
-                # Datos de la FDS
-                frases_h=['H410', 'H401', 'H331', 'H315'],
-                vla_mg_m3=20,
-                es_solido=False,
-                punto_ebullicion_C=189,
-                # Datos del Escenario de Trabajo
-                cantidad_g_dia=1740,
-                clase_frecuencia=4,
-                temperatura_trabajo_C=25,
-                clase_procedimiento=3,        # 3: Abierto
-                clase_proteccion_colectiva=4  # 4: Ventilación general
-            )
-
             json_result = json.loads(chat_json_response)
-
-            json_result["npt_risk_data"] = result_ntp
-
+            print(f"🔍 JSON RESULT: {json_result}")
             return jsonify({
                 "status": "success",
-                "chat_response": chat_json_response
+                "chat_response": json_result
             })
 
         except Exception as e:

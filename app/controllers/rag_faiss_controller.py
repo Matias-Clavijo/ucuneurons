@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
 from app.models.rag_faiss_model import rag_faiss_model
+from app.services.ent_function import calcular_riesgo_inhalacion_ntp937
 
 
 logger = logging.getLogger(__name__)
@@ -722,7 +723,15 @@ Debes devolver tu análisis en un único bloque de código JSON, sin explicacion
             simplified_results[field] = field_value
         
         overall_confidence = round(overall_confidence / len(results), 1) if results else 0
-        
+        print(f"🔍 REQUEST DATA: {request_data}")
+        NTP_RESULT = calcular_riesgo_inhalacion_ntp937(
+            frases_h=simplified_results.get("frases_h", []),
+            vla_mg_m3=simplified_results.get("factor_vla", 0),
+            cantidad_g_dia=request_data.get("cantidad_g_dia", 0),
+            clase_frecuencia=request_data.get("clase_frecuencia", 0),
+            clase_volatilidad_o_pulverulencia=simplified_results.get("volatilidad", 0),
+        )
+        print(f"🔍 NTP RESULT: {NTP_RESULT}")
         return jsonify({
             "status": "success",
             "quimico_analizado": chemical_name,
